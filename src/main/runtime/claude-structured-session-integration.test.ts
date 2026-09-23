@@ -21,6 +21,7 @@ import type {
   StructuredAgentSessionHandoffTransport,
   StructuredTuiOwner
 } from '../native-chat/agent-session-wire/structured-agent-session-handoff-types'
+import type { StructuredAgentSessionStatusSink } from '../native-chat/agent-session-wire/structured-agent-session-status-feed'
 import type { OrcaRuntimeService } from './orca-runtime'
 import type { RpcRequest, RpcResponse } from './rpc/core'
 import type { ClaudeStructuredAuthPolicy } from '../claude-accounts/claude-structured-auth-policy'
@@ -153,6 +154,8 @@ let claudeAuthPolicy: ClaudeStructuredAuthPolicy
 let claudeLaunchEnv: Record<string, string>
 let shellEnv: NodeJS.ProcessEnv
 let shellEnvironmentPolicy: NativeChatShellEnvironmentPolicy
+/** What the host handed its status sink as child work. */
+let childWork: Parameters<NonNullable<StructuredAgentSessionStatusSink['publishChildWork']>>[]
 
 async function call(method: string, params: unknown): Promise<RpcResponse> {
   const replies: RpcResponse[] = []
@@ -240,6 +243,7 @@ beforeEach(async () => {
   claude = fakeClaude(PROVIDER_SESSION)
   tuiOwner = null
   cleanups = new Map()
+  childWork = []
   const handoffTransport: StructuredAgentSessionHandoffTransport = {
     hostLabel: 'Scripted Claude host',
     launchTui: async ({ record, fence, spawnToken }) => {
@@ -320,7 +324,12 @@ beforeEach(async () => {
         resolveShellEnvironmentPolicy: () => shellEnvironmentPolicy,
         resolveClaudeAuthPolicy: () => claudeAuthPolicy,
         openClaudeConnection: claude.openConnection,
-        handoffTransport
+        handoffTransport,
+        statusSink: {
+          publish: () => {},
+          forget: () => {},
+          publishChildWork: (...args) => childWork.push(args)
+        }
       }).then(() => undefined),
     registerSubscriptionCleanup: (id: string, dispose: () => void) => cleanups.set(id, dispose),
     cleanupSubscription: (id: string) => cleanups.get(id)?.(),
@@ -339,6 +348,39 @@ afterEach(async () => {
 })
 
 describe('a structured Claude session over agentSession.*', () => {
+  it("hands its subagents to the status sink under the session's own address", async () => {
+    const created = await ok<{ fence: number }>('agentSession.create', createIntentParams())
+    const body = { kind: 'message', role: 'user', blocks: [{ type: 'text', text: 'Audit it' }] }
+    await ok('agentSession.send', {
+      envelope: envelope('agentSession.send', { body }, created.fence),
+      body
+    })
+    claude.live().handlers.onMessage?.({
+      type: 'system',
+      subtype: 'task_started',
+      session_id: PROVIDER_SESSION,
+      uuid: 'task-start',
+      task_id: 'agent-1',
+      tool_use_id: 'toolu_1',
+      task_type: 'local_agent',
+      description: 'Audit the build',
+      is_backgrounded: true
+    })
+    expect(childWork).toContainEqual([
+      expect.objectContaining({ kind: 'structured-session', sessionId: SESSION }),
+      [
+        expect.objectContaining({
+          type: 'live',
+          child: expect.objectContaining({
+            handle: { idKind: 'task_id', id: 'agent-1', runId: 'toolu_1' },
+            description: 'Audit the build'
+          })
+        })
+      ],
+      'claude'
+    ])
+  })
+
   it('strips ambient Anthropic auth from the child once a managed account is pinned', async () => {
     claudeAuthPolicy = { stripAuthEnv: true }
     claudeLaunchEnv = { ANTHROPIC_BASE_URL: 'https://gateway.example.test' }
