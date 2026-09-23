@@ -74,26 +74,20 @@ function childWorkLabel(value: string | undefined): string | undefined {
 /** An `open` operation ends on its own edge; a `reported` one lasts until the next report. */
 function nextOperation(
   reported: AgentChildWorkOperation | null | undefined,
-  current: AgentChildWorkOperation | undefined,
-  floor: number,
-  observedAt: number
+  current: AgentChildWorkOperation | undefined
 ): AgentChildWorkOperation | undefined {
-  const next =
-    reported === undefined
-      ? current
-      : reported === null
-        ? current?.basis === 'open'
-          ? undefined
-          : current
-        : reported
-  return next
-    ? { ...next, observedAt: Math.min(Math.max(next.observedAt, floor), observedAt) }
-    : undefined
+  if (reported === undefined) {
+    return current
+  }
+  if (reported === null) {
+    return current?.basis === 'open' ? undefined : current
+  }
+  return reported
 }
 
 /** Which run a run handle names: the current one (or one the record has no handle for yet), a
  *  run that is already over, or a new one the provider started. */
-export function runVerdict(
+export function agentChildWorkRunVerdict(
   ctx: AgentChildWorkEvidenceContext,
   existing: AgentChildWorkRecord,
   runId: string | undefined
@@ -126,12 +120,7 @@ function liveFields(
   const agentType = childWorkLabel(child.agentType) ?? existing?.agentType
   const totalTokens = child.totalTokens ?? existing?.totalTokens
   const lastMessage = child.lastMessage ?? prior?.lastMessage
-  const operation = nextOperation(
-    child.operation,
-    prior?.operation,
-    existing?.firstObservedAt ?? at,
-    at
-  )
+  const operation = nextOperation(child.operation, prior?.operation)
   return {
     kind: child.kind,
     state: child.state,
@@ -189,7 +178,7 @@ export function applyAgentChildWorkLive(
     counted(ctx, handle.id, result, 'admitted')
     return
   }
-  const run = runVerdict(ctx, existing, handle.runId)
+  const run = agentChildWorkRunVerdict(ctx, existing, handle.runId)
   if (run === 'previous') {
     return
   }

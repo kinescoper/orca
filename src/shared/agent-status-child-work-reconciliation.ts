@@ -14,7 +14,7 @@ import type {
 import {
   applyAgentChildWorkLive,
   settleAgentChildWork,
-  runVerdict,
+  agentChildWorkRunVerdict,
   STRUCTURED_CHILD_WORK_MAX_LIVE,
   type AgentChildWorkEvidenceContext,
   type AgentChildWorkReconcileOutcome
@@ -48,7 +48,7 @@ function applyEnded(ctx: ReconcileContext, edge: AgentChildWorkEndedEvidence): v
   if (!existing) {
     return
   }
-  if (runVerdict(ctx, existing, edge.handle.runId) !== 'current') {
+  if (agentChildWorkRunVerdict(ctx, existing, edge.handle.runId) !== 'current') {
     return
   }
   // A reported ending latches. An `unknown` one (an inventory omitted the child before its own
