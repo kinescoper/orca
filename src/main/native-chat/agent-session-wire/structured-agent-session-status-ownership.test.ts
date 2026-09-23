@@ -108,5 +108,15 @@ describe('structured status owner address retention', () => {
     owner.forget(summary.sessionId)
     owner.publishChildWork(summary.sessionId, evidence, 'claude')
     expect(sink.publishChildWork).toHaveBeenCalledOnce()
+    // An address held after a publish that threw is not a row that landed.
+    const unlanded = new StructuredAgentSessionStatusOwnership(() => ({
+      ...sink,
+      publish: () => {
+        throw new Error('store down')
+      }
+    }))
+    expect(() => unlanded.publish(summary, location)).toThrow('store down')
+    unlanded.publishChildWork(summary.sessionId, evidence, 'claude')
+    expect(sink.publishChildWork).toHaveBeenCalledOnce()
   })
 })
