@@ -104,7 +104,8 @@ export function agentChildWorkSettledAt(
 }
 
 function admittedOperation(
-  request: AgentChildWorkObservationFields
+  request: AgentChildWorkObservationFields,
+  firstObservedAt: number
 ): AgentChildWorkOperation | undefined {
   const operation = request.operation
   if (!operation || !agentChildWorkAllowsOperation(request.membership, request.state)) {
@@ -117,7 +118,8 @@ function admittedOperation(
         toolName,
         ...(input ? { input } : {}),
         basis: operation.basis,
-        observedAt: operation.observedAt
+        // A producer may stamp provider time; the host bounds it to the child's evidence window.
+        observedAt: Math.min(Math.max(operation.observedAt, firstObservedAt), request.observedAt)
       }
     : undefined
 }
@@ -129,7 +131,7 @@ export function buildAgentChildWork(
   },
   host: AgentChildWorkHostFields
 ): AgentChildWorkInput | null {
-  const operation = admittedOperation(request)
+  const operation = admittedOperation(request, host.firstObservedAt)
   const lastMessage = normalizeOptionalField(
     request.lastMessage,
     AGENT_CHILD_WORK_LAST_MESSAGE_MAX_LENGTH
@@ -183,6 +185,23 @@ export function commitAgentChildWork(
     : rejectAgentChildWorkAdmission('store-rejected')
 }
 
+/** Settled history only gains precision: an `unknown` ending may become a definite one (a roster
+ *  omission can land a tick before the frame naming the outcome); a definite ending never changes,
+ *  and a later `unknown` claims nothing about it. An omitted outcome is stored as `unknown`. */
+function settledEvidence(
+  child: AgentChildWorkRecord,
+  request: AgentChildWorkAnnounceRequest | AgentChildWorkAdoptRequest
+): 'admit' | 'ignore' | 'conflict' {
+  if (request.membership !== 'settled' || request.state !== child.state) {
+    return 'conflict'
+  }
+  const requested = request.outcome ?? 'unknown'
+  if (requested === child.outcome || child.outcome === 'unknown') {
+    return 'admit'
+  }
+  return requested === 'unknown' ? 'ignore' : 'conflict'
+}
+
 export function updateExistingAgentChildWork(
   store: AgentStatusStore,
   request: AgentChildWorkAnnounceRequest | AgentChildWorkAdoptRequest,
@@ -190,14 +209,17 @@ export function updateExistingAgentChildWork(
   aliases: AgentChildWorkAliasInput[],
   removeAliases: string[] = []
 ): AgentChildWorkAdmissionResult {
-  if (
-    child.membership === 'settled' &&
-    (request.membership !== 'settled' ||
-      request.state !== child.state ||
-      // An omitted outcome was stored as `unknown`, so repeating the omission is the same ending.
-      (request.outcome ?? 'unknown') !== child.outcome)
-  ) {
+  const evidence = child.membership === 'settled' ? settledEvidence(child, request) : 'admit'
+  if (evidence === 'conflict') {
     return rejectAgentChildWorkAdmission('stale-invocation')
+  }
+  if (evidence === 'ignore') {
+    return {
+      accepted: true,
+      childWorkId: child.childWorkId,
+      revision: child.revision,
+      created: false
+    }
   }
   const updated = buildAgentChildWork(request, {
     childWorkId: child.childWorkId,

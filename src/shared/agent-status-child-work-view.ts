@@ -22,7 +22,8 @@ import { agentStatusSubjectsEqual } from './agent-status-subject'
 import type { AgentStatusState } from './agent-status-types'
 
 /** What a surface reads about one child: a read-only projection of the host's record.
- *  Host bookkeeping (residency, invocation history, provenance, aliases) never travels. */
+ *  Host bookkeeping (residency, invocation history, provenance, aliases) never travels. A view
+ *  from another build is decoded permissively or behind a capability, never by the record codec. */
 export type AgentChildWorkView = {
   id: AgentChildWorkId
   /** The id today's wire names this child by (`tasks[].id`, `subagents[].id`). Absent when the

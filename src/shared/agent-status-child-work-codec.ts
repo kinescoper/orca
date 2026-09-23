@@ -129,6 +129,10 @@ function parseOptionalLabel(value: unknown, maxLength = MAX_LABEL_LENGTH): strin
   return value === undefined ? '' : isBoundedString(value, maxLength) ? value : null
 }
 
+/** The host's integrity gate for its own store, strict by design: an unknown key or enum arm
+ *  rejects the whole record. Never a cross-version decoder — anything reading records or views
+ *  from another build must ignore unknown keys and degrade unknown arms, or negotiate
+ *  (docs/reference/remote-wire-compatibility.md, Rules 1 and 4). */
 export function parseAgentChildWorkInput(value: unknown): AgentChildWorkInput | null {
   if (
     !isRecord(value) ||

@@ -42,7 +42,8 @@ export type AgentChildWorkObservationFields = {
   parentChildWorkId?: AgentChildWorkId
   residency?: AgentChildWorkResidency
   /** Raw provider text is fine: admission folds it to the one-line previews a status row uses,
-   *  and drops it when the state cannot carry an operation (settled, idle, unverifiable). */
+   *  clamps `observedAt` into [firstObservedAt, request observedAt], and drops the operation when
+   *  the state cannot carry one (settled, idle, unverifiable). Labels are NOT normalized. */
   operation?: AgentChildWorkOperation
   lastMessage?: string
   observedAt: number

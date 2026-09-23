@@ -70,6 +70,25 @@ describe('child-work admission of what a child is doing', () => {
     expect(child?.lastMessage).toBe('Line one Line two')
   })
 
+  it('clamps an operation stamped in another clock into the child evidence window', () => {
+    const { store, admission } = setup()
+    admission.announce(
+      observation({ operation: { toolName: 'Bash', basis: 'open', observedAt: 5_000 } })
+    )
+    expect(store.getChild('child-1')?.operation).toMatchObject({ observedAt: 10 })
+    admission.announce(
+      observation({
+        observedAt: 20,
+        operation: { toolName: 'Read', basis: 'reported', observedAt: 3 }
+      })
+    )
+    expect(store.getChild('child-1')?.operation).toEqual({
+      toolName: 'Read',
+      basis: 'reported',
+      observedAt: 10
+    })
+  })
+
   it('carries owner and residency through, and clears the operation of a parked child', () => {
     const { store, admission } = setup()
     admission.announce(observation())
@@ -187,6 +206,73 @@ describe('child-work settlement stamping', () => {
       settledAt: 20,
       lastMessage: 'Final words'
     })
+  })
+
+  it('refines an ending first recorded as unknown, keeping when it settled', () => {
+    const { store, admission } = setup()
+    admission.announce(observation())
+    // Roster omission lands first, the frame naming the outcome in the same tick.
+    admission.announce(
+      observation({ state: 'done', membership: 'settled', outcome: 'unknown', observedAt: 20 })
+    )
+    expect(
+      admission.announce(
+        observation({
+          state: 'done',
+          membership: 'settled',
+          outcome: 'failed',
+          observedAt: 20,
+          lastMessage: 'Exit code 1'
+        })
+      )
+    ).toMatchObject({ accepted: true, created: false })
+    expect(store.getChild('child-1')).toMatchObject({
+      outcome: 'failed',
+      settledAt: 20,
+      lastMessage: 'Exit code 1'
+    })
+  })
+
+  it('never changes a definite ending to a different one', () => {
+    const { store, admission } = setup()
+    admission.announce(
+      observation({ state: 'done', membership: 'settled', outcome: 'succeeded', observedAt: 20 })
+    )
+    const before = store.getChild('child-1')
+    expect(
+      admission.announce(
+        observation({ state: 'done', membership: 'settled', outcome: 'failed', observedAt: 25 })
+      )
+    ).toEqual({ accepted: false, reason: 'stale-invocation' })
+    expect(store.getChild('child-1')).toEqual(before)
+  })
+
+  it.each([
+    ['an explicit unknown', { outcome: 'unknown' }],
+    ['an omitted outcome', {}]
+  ] as const)('ignores %s after a definite ending', (_case, ending) => {
+    const { store, admission } = setup()
+    admission.announce(
+      observation({
+        state: 'done',
+        membership: 'settled',
+        outcome: 'cancelled',
+        observedAt: 20,
+        lastMessage: 'Stopped by user'
+      })
+    )
+    const before = store.getChild('child-1')
+    expect(
+      admission.announce(
+        observation({ state: 'done', membership: 'settled', observedAt: 25, ...ending })
+      )
+    ).toEqual({
+      accepted: true,
+      childWorkId: 'child-1',
+      revision: before?.revision,
+      created: false
+    })
+    expect(store.getChild('child-1')).toEqual(before)
   })
 
   it('stamps a child first seen already settled at that observation', () => {
