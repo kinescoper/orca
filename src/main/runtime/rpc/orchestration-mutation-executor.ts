@@ -53,7 +53,9 @@ export class OrchestrationMutationExecutor {
     request: RpcRequest,
     params: unknown,
     invoke: (mutation?: DurableMutationInvocation) => unknown,
-    callerFingerprintOverride?: string
+    callerFingerprintOverride?: string,
+    /** The resolved session actor; it joins the payload so another caller cannot replay it. */
+    callerActor?: string
   ): Promise<unknown> {
     const requestId = request.orchestrationRequestId
     if (!requestId || !isDurableMutation(request.method, params)) {
@@ -61,7 +63,7 @@ export class OrchestrationMutationExecutor {
     }
     const callerFingerprint =
       callerFingerprintOverride ?? this.getLocalAuthenticatedCallerFingerprint()
-    const stableParams = replayStableCallerParams(this.runtime, params)
+    const stableParams = replayStableCallerParams(this.runtime, params, callerActor)
     const basePayloadHash = hashCanonical({ method: request.method, params: stableParams })
     const key = `${callerFingerprint}:${requestId}`
     const db = this.runtime.getOrchestrationDb()

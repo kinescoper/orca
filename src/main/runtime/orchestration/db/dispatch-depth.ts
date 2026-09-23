@@ -26,17 +26,29 @@ export type DispatchCreator =
       paneKey?: string
       /** Remote attachment matching requires the exact incarnation; local rows do not. */
       processIncarnation?: string
+      /** A structured worker's `session:<id>`, recorded beside its handle. */
+      actor?: string | null
     }
+  /** A structured session with no terminal handle, identified by its actor alone. */
+  | { kind: 'actor'; actor: string }
 
 /** Creator identity to persist on a new row, so depth can later tell delegation from bookkeeping. */
 export function recordedCreatorIdentity(creator: DispatchCreator): {
   creatorHandle: string | null
   creatorPaneKey: string | null
+  creatorActor: string | null
 } {
   if (creator.kind === 'system') {
-    return { creatorHandle: null, creatorPaneKey: null }
+    return { creatorHandle: null, creatorPaneKey: null, creatorActor: null }
   }
-  return { creatorHandle: creator.handle, creatorPaneKey: creator.paneKey ?? null }
+  if (creator.kind === 'actor') {
+    return { creatorHandle: null, creatorPaneKey: null, creatorActor: creator.actor }
+  }
+  return {
+    creatorHandle: creator.handle,
+    creatorPaneKey: creator.paneKey ?? null,
+    creatorActor: creator.actor ?? null
+  }
 }
 
 /**
@@ -45,6 +57,9 @@ export function recordedCreatorIdentity(creator: DispatchCreator): {
  * no creator and keep counting, which is the pre-v37 answer and fails closed.
  */
 function isSelfCreatedDispatch(row: DispatchContextRow): boolean {
+  if (row.creator_actor && row.creator_actor === row.assignee_actor) {
+    return true
+  }
   if (row.creator_pane_key && row.assignee_pane_key) {
     return isEquivalentPaneKey(row.creator_pane_key, row.assignee_pane_key)
   }
@@ -84,14 +99,14 @@ export function resolveCreatorDepth(this: OrchestrationDb, creator: DispatchCrea
   // Local rows match on handle/pane as they always have. process_incarnation is
   // nullable here and context-only dispatch stores null deliberately, so
   // requiring it would drop real parents.
-  const local = this.findActiveDispatchForAssignee(creator.handle, creator.paneKey) as
-    | DispatchContextRow
-    | undefined
+  const local = findActiveDispatchForCreator.call(this, creator)
   if (local && !isSelfCreatedDispatch(local)) {
     depths.push(local.depth)
   }
 
-  for (const attachment of findPotentiallyLiveAttachmentsForCreator.call(this, creator)) {
+  const attachments =
+    creator.kind === 'terminal' ? findPotentiallyLiveAttachmentsForCreator.call(this, creator) : []
+  for (const attachment of attachments) {
     depths.push(attachment.depth)
   }
 
@@ -109,14 +124,34 @@ export function resolveCreatorDispatchId(
   if (creator.kind === 'system') {
     return null
   }
-  const own = this.findActiveDispatchForAssignee(creator.handle, creator.paneKey)
+  const own = findActiveDispatchForCreator.call(this, creator)
   // Why: a self-dispatch is not a parent Attempt, so it must not be stamped as the child's creator.
   const local = own && !isSelfCreatedDispatch(own) ? own : undefined
-  const remote = findPotentiallyLiveAttachmentsForCreator.call(this, creator)
+  const remote =
+    creator.kind === 'terminal' ? findPotentiallyLiveAttachmentsForCreator.call(this, creator) : []
   if ((local ? 1 : 0) + remote.length !== 1) {
     return null
   }
   return local?.id ?? remote[0]?.dispatch_id ?? null
+}
+
+/** The live Dispatch this creator is itself working on, found the way its identity is recorded. */
+function findActiveDispatchForCreator(
+  this: OrchestrationDb,
+  creator: Exclude<DispatchCreator, { kind: 'system' }>
+): DispatchContextRow | undefined {
+  if (creator.kind === 'actor') {
+    return this.db
+      .prepare(
+        `SELECT * FROM dispatch_contexts
+         WHERE assignee_actor = ? AND status IN ('pending', 'dispatched')
+         ORDER BY rowid DESC LIMIT 1`
+      )
+      .get(creator.actor) as DispatchContextRow | undefined
+  }
+  return this.findActiveDispatchForAssignee(creator.handle, creator.paneKey) as
+    | DispatchContextRow
+    | undefined
 }
 
 /**

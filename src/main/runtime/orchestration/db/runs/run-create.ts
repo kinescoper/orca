@@ -8,23 +8,35 @@ export function createRun(
   this: OrchestrationDb,
   params: {
     objective: string
-    coordinatorHandle: string
-    coordinatorPaneKey: string
+    coordinatorHandle: string | null
+    coordinatorPaneKey: string | null
+    /** `session:<id>` when the coordinator is a structured session; see orchestration-actor. */
+    coordinatorActor?: string | null
   }
 ): RunRow {
+  const coordinator = {
+    terminalHandle: params.coordinatorHandle,
+    paneKey: params.coordinatorPaneKey,
+    actor: params.coordinatorActor ?? null
+  }
   const id = generateId('run')
   this.db.exec('BEGIN IMMEDIATE')
   try {
-    this.unbindOtherRunsForPane(params.coordinatorPaneKey)
+    this.unbindOtherRunsForCoordinator(coordinator)
     this.db
       .prepare(
         `INSERT INTO runs (
-           id, objective, coordinator_handle, coordinator_pane_key,
+           id, objective, coordinator_handle, coordinator_pane_key, coordinator_actor,
            consumer_generation, legacy
-         ) VALUES (?, ?, ?, ?, 1, 0)`
+         ) VALUES (?, ?, ?, ?, ?, 1, 0)`
       )
-      .run(id, params.objective, params.coordinatorHandle, params.coordinatorPaneKey)
-    this.rememberRunCoordinatorHandle(id, params.coordinatorHandle)
+      .run(id, params.objective, coordinator.terminalHandle, coordinator.paneKey, coordinator.actor)
+    // A structured worker is addressed by its handle and its session, so both reach this Run.
+    for (const address of new Set([coordinator.terminalHandle, coordinator.actor])) {
+      if (address) {
+        this.rememberRunCoordinatorHandle(id, address)
+      }
+    }
     this.db.exec('COMMIT')
   } catch (error) {
     this.db.exec('ROLLBACK')

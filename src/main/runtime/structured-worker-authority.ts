@@ -14,6 +14,7 @@ import type { OrchestrationDb } from './orchestration/db'
 import {
   isStructuredWorkerHandle,
   structuredWorkerIdentities,
+  structuredWorkerProcessIncarnation,
   structuredWorkerRecordIsCurrent,
   type StructuredWorkerIdentity
 } from './structured-worker-identity'
@@ -44,6 +45,21 @@ export function resolveStructuredWorkerIdentity(
     return known
   }
   const row = db?.getWorkerTerminalResourceByHandle?.(handle)
+  return row ? structuredWorkerIdentities.rehydrate(row) : null
+}
+
+/** The worker identity minted for a session, if that session is a structured worker. */
+export function resolveStructuredWorkerIdentityForSession(
+  sessionId: string,
+  db: OrchestrationDb | null | undefined
+): StructuredWorkerIdentity | null {
+  const known = structuredWorkerIdentities.getBySessionId(sessionId)
+  if (known) {
+    return known
+  }
+  const row = db?.getWorkerTerminalResourceByProcessIncarnation?.(
+    structuredWorkerProcessIncarnation(sessionId)
+  )
   return row ? structuredWorkerIdentities.rehydrate(row) : null
 }
 

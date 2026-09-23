@@ -82,7 +82,8 @@ export async function invokeDispatcherUnaryMethod({
     request,
     effectiveParams,
     invoke,
-    legacyCoordinator?.mutationCallerFingerprint ?? authenticatedCallerFingerprint
+    legacyCoordinator?.mutationCallerFingerprint ?? authenticatedCallerFingerprint,
+    context.orchestrationCaller?.actor
   )
   recordRuntimeFeatureInteraction(runtime, request.method, result, undefined, request.params)
   return result

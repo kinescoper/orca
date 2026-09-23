@@ -3,13 +3,16 @@ import { OrchestrationError } from '../../orchestration-error'
 import { LEGACY_CONTRACT_VERSION } from '../contract-constants'
 import { isEquivalentPaneKey } from '../pane-key-match'
 import type { OrchestrationDb } from '../orchestration-db'
+import { runBoundToCoordinator } from '../../orchestration-caller-identity'
 
 export function bindRun(
   this: OrchestrationDb,
   params: {
     runId: string
-    coordinatorHandle: string
-    coordinatorPaneKey: string
+    coordinatorHandle: string | null
+    coordinatorPaneKey: string | null
+    /** `session:<id>` when the coordinator is a structured session; see orchestration-actor. */
+    coordinatorActor?: string | null
     takeoverLegacy?: boolean
     legacyCoordinatorAuthority?: {
       runId: string
@@ -20,6 +23,11 @@ export function bindRun(
     }
   }
 ): RunRow | undefined {
+  const coordinator = {
+    terminalHandle: params.coordinatorHandle,
+    paneKey: params.coordinatorPaneKey,
+    actor: params.coordinatorActor ?? null
+  }
   this.db.exec('BEGIN IMMEDIATE')
   try {
     const run = this.getRunRaw(params.runId)
@@ -27,9 +35,7 @@ export function bindRun(
       this.db.exec('ROLLBACK')
       return undefined
     }
-    const sameBinding =
-      run.coordinator_pane_key !== null &&
-      isEquivalentPaneKey(run.coordinator_pane_key, params.coordinatorPaneKey)
+    const sameBinding = runBoundToCoordinator(run, coordinator)
     const adoption = this.getLegacyAdoption()
     const adoptedRun = adoption?.adopted_run_id === params.runId
     const legacyAuthority = params.legacyCoordinatorAuthority
@@ -49,6 +55,7 @@ export function bindRun(
       legacyPrincipal.terminal_handle === legacyAuthority.terminalHandle &&
       isEquivalentPaneKey(legacyPrincipal.pane_key, legacyAuthority.paneKey) &&
       params.coordinatorHandle === legacyAuthority.terminalHandle &&
+      params.coordinatorPaneKey !== null &&
       isEquivalentPaneKey(params.coordinatorPaneKey, legacyAuthority.paneKey)
     )
     if (legacyAuthority && !provenLegacyBinding) {
@@ -109,14 +116,18 @@ export function bindRun(
         }
       )
     }
-    this.unbindOtherRunsForPane(params.coordinatorPaneKey, params.runId)
-    for (const handle of new Set(
-      [run.coordinator_handle, params.coordinatorHandle].filter((value): value is string =>
-        Boolean(value)
-      )
+    this.unbindOtherRunsForCoordinator(coordinator, params.runId)
+    // Both coordinators' addresses, and a structured worker's session address beside its handle.
+    for (const address of new Set(
+      [
+        run.coordinator_handle,
+        run.coordinator_actor,
+        coordinator.terminalHandle,
+        coordinator.actor
+      ].filter((value): value is string => Boolean(value))
     )) {
-      this.rememberRunCoordinatorHandle(params.runId, handle)
-      this.routeAllUnreadDirectMessagesToRunMailbox(params.runId, handle)
+      this.rememberRunCoordinatorHandle(params.runId, address)
+      this.routeAllUnreadDirectMessagesToRunMailbox(params.runId, address)
     }
     if (
       (params.takeoverLegacy && !takeoverAlreadyApplied) ||
@@ -128,26 +139,31 @@ export function bindRun(
           coordinatorPrincipal?.status === 'committed' &&
           (params.takeoverLegacy ||
             coordinatorPrincipal.terminal_handle !== params.coordinatorHandle ||
+            params.coordinatorPaneKey === null ||
             !isEquivalentPaneKey(coordinatorPrincipal.pane_key, params.coordinatorPaneKey))
         ) {
           this.setLegacyCompatibilityPrincipalStatus(coordinatorPrincipal.id, 'revoked')
         }
       }
-      // The actor belongs to the coordinator being replaced; nothing here resolves the new one's.
       this.db
         .prepare(
           `UPDATE runs
-           SET coordinator_handle = ?, coordinator_pane_key = ?, coordinator_actor = NULL,
-               coordinator_actor_generation = NULL,
+           SET coordinator_handle = ?, coordinator_pane_key = ?, coordinator_actor = ?,
+               coordinator_actor_generation = consumer_generation + 1,
                consumer_generation = consumer_generation + 1,
                updated_at = datetime('now')
            WHERE id = ?`
         )
-        .run(params.coordinatorHandle, params.coordinatorPaneKey, params.runId)
+        .run(coordinator.terminalHandle, coordinator.paneKey, coordinator.actor, params.runId)
       this.fenceUnacknowledgedMailboxDeliveries(`run:${params.runId}`)
       if (params.takeoverLegacy || replacesLegacyCoordinator) {
         this.promoteLegacyCoordinatorMailForTakeover(params.runId, retainedCoordinatorHandle)
       }
+    } else if (run.coordinator_actor !== coordinator.actor) {
+      // Same coordinator, so no new consumer: correct an actor a writer without the column left.
+      this.db
+        .prepare('UPDATE runs SET coordinator_actor = ? WHERE id = ?')
+        .run(coordinator.actor, params.runId)
     }
     this.db.exec('COMMIT')
   } catch (error) {

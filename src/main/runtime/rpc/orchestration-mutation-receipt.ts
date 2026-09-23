@@ -13,12 +13,21 @@ export type MutationReplayNudge =
   | { kind: 'messages'; targets: { to: string; type: string }[] }
   | { kind: 'federation'; runId?: string }
 
-export function replayStableCallerParams(runtime: OrcaRuntimeService, params: unknown): unknown {
+const CALLER_ACTOR_KEY = '__orcaCallerActor'
+
+export function replayStableCallerParams(
+  runtime: OrcaRuntimeService,
+  params: unknown,
+  callerActor?: string
+): unknown {
   if (!params || typeof params !== 'object' || Array.isArray(params)) {
     return params
   }
   const source = params as Record<string, unknown>
-  const result = { ...source }
+  // Absent for terminal callers, so their payload hashes are unchanged.
+  const result: Record<string, unknown> = callerActor
+    ? { ...source, [CALLER_ACTOR_KEY]: callerActor }
+    : { ...source }
   delete result.waitSubmitMs
   for (const property of ['from', 'callerTerminalHandle', 'terminal'] as const) {
     const handle = source[property]

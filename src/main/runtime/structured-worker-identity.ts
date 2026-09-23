@@ -26,6 +26,10 @@ import {
 } from '../../shared/structured-agent-session-projection'
 import { isTerminalLeafId, makePaneKey, parsePaneKey } from '../../shared/stable-pane-id'
 import {
+  formatOrchestrationActor,
+  sessionOrchestrationActor
+} from '../../shared/orchestration-actor'
+import {
   parseWorkerTerminalHostScope,
   type WorkerTerminalHostScope
 } from './orchestration/worker-terminal-process-liveness'
@@ -120,6 +124,15 @@ export function sessionIdFromStructuredWorkerIncarnation(
   }
   const sessionId = processIncarnation.slice(STRUCTURED_WORKER_INCARNATION_PREFIX.length)
   return sessionId.length > 0 ? sessionId : null
+}
+
+/** The orchestration actor a `structured:<sessionId>` incarnation names; null for any other. */
+export function structuredWorkerActorForIncarnation(
+  processIncarnation: string | null | undefined
+): string | null {
+  const sessionId = sessionIdFromStructuredWorkerIncarnation(processIncarnation)
+  const actor = sessionId ? sessionOrchestrationActor(sessionId) : null
+  return actor ? formatOrchestrationActor(actor) : null
 }
 
 /** Structured sessions can only exist local and outside WSL; anything else is not our authority. */
