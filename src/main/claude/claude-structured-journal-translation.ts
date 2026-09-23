@@ -57,6 +57,9 @@ export type ClaudeJournalTranslator = {
    *  a client's Stop names. Sole owner: no reader keeps a copy to disagree with. */
   readonly currentTurnId: string | null
   flush: () => void
+  /** The agent (its canonical task id) whose own traffic made a tool call; null when the session's
+   *  own agent made it, or it was never seen. The same answer a row that call produced carries. */
+  childToolOwner?: (toolUseId: string) => string | null
   retryPendingTaskRows?: () => StructuredAgentSessionSinkAdmission
   /** Streamed blocks still awaiting a final frame. A settled turn leaves none. */
   readonly pendingStreamedBlocks: number
@@ -318,6 +321,12 @@ export function createClaudeJournalTranslator(
       return turn.id
     },
     flush: streamedText.flush,
+    childToolOwner: (toolUseId) => {
+      const ownerRef = toolOrigins.childOwnerRef(toolUseId)
+      return ownerRef === null
+        ? null
+        : (subagents.linkage.settledLinkageFor(ownerRef).linkage.agentId ?? null)
+    },
     retryPendingTaskRows: () => backgroundTasks.retryPendingWrites(),
     get pendingStreamedBlocks() {
       return streamedText.pending

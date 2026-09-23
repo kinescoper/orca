@@ -29,6 +29,8 @@ export type TrackedClaudeBackgroundTask = {
    *  so clients can render elapsed and keep a stable first-seen sort. */
   startedAt: number
   totalTokens?: number
+  /** The spawn call of the current run: the spawn's result and the child's own traffic name it. */
+  toolUseId?: string
 }
 
 export function claudeBackgroundTaskDetail(
