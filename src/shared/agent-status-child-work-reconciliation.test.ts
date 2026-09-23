@@ -300,7 +300,8 @@ describe('structured child-work reconciliation', () => {
       residency: 'foreground',
       observedAt: 50,
       stoppable: true,
-      provenance: { source: 'hook', producerId: 'another-producer' }
+      // Same source, same parent and provider: only the producer differs.
+      provenance: { source: 'structured-session', producerId: 'another-producer' }
     })
     apply(
       live(child('task-a')),
