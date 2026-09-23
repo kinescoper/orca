@@ -275,6 +275,43 @@ describe('mail owned by an active Dispatch assignee addressed by its actor', () 
   })
 })
 
+describe('stray mail to a session address that is only an assignee', () => {
+  let db: OrchestrationDb
+
+  afterEach(() => {
+    db?.close()
+  })
+
+  it('sweeps it into the Dispatch mailbox, as stray mail to an assignee handle is', () => {
+    db = new OrchestrationDb(':memory:')
+    const run = db.createRun({
+      objective: 'pty coordinator',
+      coordinatorHandle: 'term_c',
+      coordinatorPaneKey: OTHER_PANE
+    })
+    const dispatch = db.createDispatchContext({
+      taskId: db.createTask({ runId: run.id, spec: 'work' }).id,
+      assigneeHandle: mintStructuredWorkerHandle(),
+      assigneePaneKey: mintStructuredWorkerPaneKey(WORKER_SESSION),
+      processIncarnation: structuredWorkerProcessIncarnation(WORKER_SESSION),
+      creator: { kind: 'system' },
+      maxDepth: UNCAPPED
+    })
+    // The worker coordinates nothing, so no address cache entry can claim this mail.
+    const stray = db.insertMessage({
+      from: 'term_c',
+      to: WORKER_ACTOR,
+      subject: 's',
+      body: '',
+      runId: run.id
+    })
+    expect(db.getMessageById(stray.id)?.to_handle).toBe(WORKER_ACTOR)
+
+    expect(db.routeForeignDirectMessagesToOwnedMailboxes(WORKER_ACTOR).routedCount).toBe(1)
+    expect(db.getMessageById(stray.id)?.to_handle).toBe(`dispatch:${dispatch.id}`)
+  })
+})
+
 describe('Dispatch actors recorded by every writer', () => {
   let db: OrchestrationDb
 

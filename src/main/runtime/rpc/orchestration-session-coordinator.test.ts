@@ -117,6 +117,36 @@ describe('a structured chat coordinates through the same verbs as a terminal', (
     ).toMatchObject({ task: { status: 'completed' } })
   })
 
+  it("files a session's mail to a plain terminal under its own Run", async () => {
+    const runId = await runCreate(SESSION_X)
+    const { message } = await as(SESSION_X, 'orchestration.send', {
+      to: WORKER_HANDLE,
+      subject: 'no dispatch here'
+    })
+    expect(message).toMatchObject({ from_handle: ACTOR_X, to_handle: WORKER_HANDLE, run_id: runId })
+  })
+
+  it("addresses a group to the session's own Run", async () => {
+    await runCreate(SESSION_X)
+    const response = await h.dispatch(
+      orchestrationRequest(
+        'orchestration.send',
+        { to: '@all', subject: 'everyone' },
+        {
+          sessionId: SESSION_X
+        }
+      )
+    )
+    // The audience resolved to the session's Run; that Run simply has no workers yet.
+    expect(response).toMatchObject({
+      ok: false,
+      error: {
+        code: 'terminal_not_found',
+        message: 'No recipients resolved for group address: @all'
+      }
+    })
+  })
+
   it('asks as a coordinator does: only a supervised worker may ask', async () => {
     await runCreate(SESSION_X)
     const response = await h.dispatch(
