@@ -152,7 +152,8 @@ describe('Run coordinator actor address', () => {
       coordinator_handle: 'term_taker',
       coordinator_actor: null
     })
-    // Neither Run ever became reachable at the worker's session address.
-    expect(db.getRunMailboxOwnerIdsForHandle(`session:${WORKER_SESSION_ID}`)).toEqual([])
+    // A replaced coordinator's session address stays remembered beside its handle, like any former
+    // coordinator's address, so late mail to it still reaches the Run's mailbox.
+    expect(db.getRunMailboxOwnerIdsForHandle(`session:${WORKER_SESSION_ID}`)).toEqual([second.id])
   })
 })

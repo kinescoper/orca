@@ -24,6 +24,7 @@ import { parseRpcRequestParams } from './dispatcher-request-parsing'
 import { RpcStreamingDispatcher } from './rpc-streaming-dispatcher'
 import { invokeDispatcherUnaryMethod } from './dispatcher-unary-method-invocation'
 import {
+  claimsOrchestrationSession,
   resolveOrchestrationSessionCaller,
   type ResolvedOrchestrationRequest
 } from './orchestration-session-caller'
@@ -77,16 +78,18 @@ export class RpcDispatcher {
     if (parsedParams.error) {
       return parsedParams.error
     }
-    let resolved: ResolvedOrchestrationRequest
-    try {
-      resolved = await resolveOrchestrationSessionCaller(
-        this.runtime,
-        request,
-        parsedParams.value,
-        options
-      )
-    } catch (error) {
-      return mapDispatcherError(request, meta, error)
+    let resolved: ResolvedOrchestrationRequest = { request, params: parsedParams.value }
+    if (claimsOrchestrationSession(request)) {
+      try {
+        resolved = await resolveOrchestrationSessionCaller(
+          this.runtime,
+          request,
+          resolved.params,
+          options
+        )
+      } catch (error) {
+        return mapDispatcherError(request, meta, error)
+      }
     }
 
     if (isStreamingMethod(method)) {

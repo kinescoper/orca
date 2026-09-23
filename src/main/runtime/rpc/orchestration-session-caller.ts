@@ -66,6 +66,18 @@ export type ResolvedOrchestrationRequest = {
 
 const NO_EFFECTS = { effectsApplied: false } as const
 
+/**
+ * Whether this request names its caller by a session id. Checked synchronously so every other
+ * request, terminal callers included, reaches its method without an extra async hop.
+ */
+export function claimsOrchestrationSession(request: RpcRequest): boolean {
+  return (
+    request.method.startsWith('orchestration.') &&
+    request.orchestrationCompatibilityEvidence?.agentSessionId !== undefined
+  )
+}
+
+/** Only for a request `claimsOrchestrationSession` accepts. Throws the refusal, if any. */
 export async function resolveOrchestrationSessionCaller(
   runtime: OrcaRuntimeService,
   request: RpcRequest,
@@ -74,9 +86,6 @@ export async function resolveOrchestrationSessionCaller(
 ): Promise<ResolvedOrchestrationRequest> {
   const evidence = request.orchestrationCompatibilityEvidence
   const claimed: unknown = evidence?.agentSessionId
-  if (!request.method.startsWith('orchestration.') || claimed === undefined) {
-    return { request, params }
-  }
   if (route?.pairedDeviceId !== undefined) {
     throw hostBoundary(
       'This request reached Orca from a paired client, and an agent session id identifies a caller only on the host that runs that session.'

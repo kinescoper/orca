@@ -227,6 +227,7 @@ describe('sendGroupMessage actually composes structured workers in', () => {
     const db = {
       getLegacyAdoptedRunMailboxOwner: () => null,
       getCurrentRunForPane: () => undefined,
+      getCurrentRunForCoordinator: () => undefined,
       getActiveDispatchForIdentity: () => ({ run_id: 'run_1' }),
       getActiveDispatchMailboxOwners: () => [],
       getRunMailboxOwnerIdsForHandle: () => [],
@@ -268,6 +269,7 @@ describe('sendGroupMessage actually composes structured workers in', () => {
       db: db as never,
       from: 'term_sender',
       groupAddress: '@codex',
+      sender: { address: 'term_sender', terminalHandle: 'term_sender', paneKey: null, actor: null },
       senderPaneKey: undefined,
       senderRunId: 'run_1',
       explicitRunId: undefined,

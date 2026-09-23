@@ -16,6 +16,7 @@ import { routeDispatcherClientHostedBrowserRpc } from './dispatcher-client-brows
 import { needsLocalCallerFingerprint } from './dispatcher-caller-fingerprint'
 import { createDispatcherStreamingFeatureEmitter } from './dispatcher-streaming-feature-emitter'
 import {
+  claimsOrchestrationSession,
   resolveOrchestrationSessionCaller,
   type ResolvedOrchestrationRequest
 } from './orchestration-session-caller'
@@ -68,17 +69,19 @@ export class RpcStreamingDispatcher {
       return
     }
     // Why: before the unary/streaming split, so both branches see the same resolved caller.
-    let resolved: ResolvedOrchestrationRequest
-    try {
-      resolved = await resolveOrchestrationSessionCaller(
-        runtime,
-        request,
-        parsedParams.value,
-        options
-      )
-    } catch (error) {
-      reply(JSON.stringify(mapDispatcherError(request, envelopeMeta, error)))
-      return
+    let resolved: ResolvedOrchestrationRequest = { request, params: parsedParams.value }
+    if (claimsOrchestrationSession(request)) {
+      try {
+        resolved = await resolveOrchestrationSessionCaller(
+          runtime,
+          request,
+          resolved.params,
+          options
+        )
+      } catch (error) {
+        reply(JSON.stringify(mapDispatcherError(request, envelopeMeta, error)))
+        return
+      }
     }
     request = resolved.request
     const params = resolved.params
