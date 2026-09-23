@@ -41,7 +41,7 @@ export const ORCHESTRATION_CHECK_METHODS = [
         paneKey: runtime.getTerminalPaneKey(handle) ?? params.terminalPaneKey
       })
       const paneKey = caller.paneKey ?? undefined
-      const boundRun = db.getCurrentRunForCoordinator(caller)
+      const boundRun = hasRunBindingKey(caller) ? db.getCurrentRunForCoordinator(caller) : undefined
       if (params.run || boundRun) {
         return checkRunMailbox({
           params,
