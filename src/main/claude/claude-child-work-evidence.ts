@@ -16,15 +16,7 @@ import type {
   AgentChildWorkEvidenceHandle,
   AgentChildWorkLiveObservation
 } from '../../shared/agent-status-child-work-evidence'
-import {
-  classifyClaudeBackgroundTaskKind,
-  record,
-  taskAliasId,
-  taskDescription,
-  taskName,
-  taskText,
-  taskUsageTotalTokens
-} from './claude-background-task-frames'
+import { record, taskText, taskUsageTotalTokens } from './claude-background-task-frames'
 import { isAgentChildWorkKind } from '../../shared/agent-status-child-work-liveness'
 import type { TrackedClaudeBackgroundTask } from './claude-settled-background-tasks'
 import type { ClaudeSession } from './claude-structured-session-state'
@@ -180,44 +172,15 @@ export function pendingClaudeInventory(
   })
 }
 
-/**
- * A start for a task that already ended. The legacy row waits for the roster to list it again;
- * a start under a NEW spawn call is the provider running the child again, and the record hears
- * it now. The spawn call it ended under, or none at all, is a late frame for the run that ended.
- */
-export function pendingClaudeRestart(
-  id: string,
-  message: Record<string, unknown>,
-  endedUnder: string | undefined
-): ClaudePendingChildWork | null {
-  const toolUseId = taskAliasId(message.tool_use_id)
-  if (
-    toolUseId === undefined ||
-    toolUseId === endedUnder ||
-    message.ambient === true ||
-    message.skip_transcript === true
-  ) {
-    return null
-  }
-  const kind = classifyClaudeBackgroundTaskKind(message.task_type)
-  return pendingClaudeTaskLive(id, {
-    backgrounded: message.is_backgrounded === true || kind === 'workflow' || kind === 'monitor',
-    liveInTurn: true,
-    kind,
-    description: taskDescription(message.description),
-    name: taskName(message),
-    startedAt: 0,
-    toolUseId
-  })
-}
-
 function foregroundAgentFor(
-  tasks: ReadonlyMap<string, TrackedClaudeBackgroundTask>,
+  runs: readonly ReadonlyMap<string, TrackedClaudeBackgroundTask>[],
   toolUseId: string
 ): string | null {
-  for (const [id, task] of tasks) {
-    if (task.toolUseId === toolUseId && !task.backgrounded && isAgentChildWorkKind(task.kind)) {
-      return id
+  for (const tasks of runs) {
+    for (const [id, task] of tasks) {
+      if (task.toolUseId === toolUseId && !task.backgrounded && isAgentChildWorkKind(task.kind)) {
+        return id
+      }
     }
   }
   return null
@@ -230,14 +193,14 @@ function foregroundAgentFor(
  */
 export function claudeSpawnResults(
   message: Record<string, unknown>,
-  tasks: ReadonlyMap<string, TrackedClaudeBackgroundTask>
+  runs: readonly ReadonlyMap<string, TrackedClaudeBackgroundTask>[]
 ): ClaudePendingChildWork[] {
   const envelope = message.type === 'user' ? readClaudeMessageEnvelope(message) : null
   if (!envelope) {
     return []
   }
   return claudeToolResults(envelope).flatMap((result) => {
-    const id = foregroundAgentFor(tasks, result.toolUseId)
+    const id = foregroundAgentFor(runs, result.toolUseId)
     if (id === null) {
       return []
     }

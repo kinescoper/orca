@@ -218,6 +218,51 @@ describe('Claude child-work evidence from the task tracker', () => {
         })
       })
     ])
+    // Until a roster lists it, the new run's progress still reaches its record.
+    tracker.observe(system('task_progress', { task_id: 'agent-bg', last_tool_name: 'Read' }))
+    expect(tracker.state).toEqual(before)
+    expect(drained(tracker)).toEqual([
+      expect.objectContaining({
+        child: expect.objectContaining({
+          handle: { idKind: 'task_id', id: 'agent-bg', runId: 'toolu_resume' },
+          operation: expect.objectContaining({ toolName: 'Read' })
+        })
+      })
+    ])
+    // A roster listing hands the run back to the live map under its new spawn call.
+    tracker.observe(
+      system('background_tasks_changed', {
+        tasks: [{ task_id: 'agent-bg', task_type: 'local_agent' }]
+      })
+    )
+    expect(drained(tracker)).toEqual([
+      expect.objectContaining({
+        type: 'inventory',
+        children: [
+          expect.objectContaining({
+            handle: { idKind: 'task_id', id: 'agent-bg', runId: 'toolu_resume' }
+          })
+        ]
+      })
+    ])
+  })
+
+  it("ends a restarted foreground run on its own spawn call's result", () => {
+    const tracker = new ClaudeBackgroundTaskTracker(() => 100)
+    tracker.observe(foregroundAgent)
+    tracker.observe(system('task_notification', { task_id: 'agent-fg', status: 'completed' }))
+    tracker.observe({ ...foregroundAgent, tool_use_id: 'toolu_fg_2' })
+    drained(tracker)
+    tracker.observe(spawnResult('toolu_fg'))
+    expect(drained(tracker)).toEqual([])
+    tracker.observe(spawnResult('toolu_fg_2', true))
+    expect(drained(tracker)).toEqual([
+      expect.objectContaining({
+        type: 'ended',
+        handle: { idKind: 'task_id', id: 'agent-fg', runId: 'toolu_fg_2' },
+        outcome: 'failed'
+      })
+    ])
   })
 
   it('marks a turn boundary and the end of the provider session', () => {

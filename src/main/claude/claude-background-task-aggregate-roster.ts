@@ -9,6 +9,7 @@ import {
   taskId,
   taskName
 } from './claude-background-task-frames'
+import type { ClaudeTaskRestarts } from './claude-background-task-restarts'
 import type {
   ClaudeSettledBackgroundTasks,
   TrackedClaudeBackgroundTask
@@ -21,6 +22,8 @@ export type ClaudeAggregateRosterInput = {
   retention: ClaudeSettledBackgroundTasks
   /** Terminal edges already seen; a listed id is live again. */
   terminalTaskIds: Map<string, string | undefined>
+  /** Runs started again after they ended; a listing hands one back to the live map. */
+  restarts: Pick<ClaudeTaskRestarts, 'take'>
   /** Read only for a task the roster lists for the first time. */
   now: () => number
   maxTasks: number
@@ -49,7 +52,9 @@ export function replaceClaudeAggregateRoster(input: ClaudeAggregateRosterInput):
     // FOREGROUND id undefended, since the start guard now convicts only
     // backgrounded starts.
     terminalTaskIds.delete(id)
+    const restarted = input.restarts.take(id)
     const existing = prior.get(id) ?? retention.resume(id)
+    const toolUseId = restarted?.toolUseId ?? existing?.toolUseId
     const kind = classifyClaudeBackgroundTaskKind(task.task_type)
     roster.set(id, {
       backgrounded: true,
@@ -60,7 +65,7 @@ export function replaceClaudeAggregateRoster(input: ClaudeAggregateRosterInput):
       state: liveClaudeTaskRunState(task.status) ?? existing?.state,
       startedAt: existing?.startedAt ?? input.now(),
       totalTokens: existing?.totalTokens,
-      ...(existing?.toolUseId !== undefined ? { toolUseId: existing.toolUseId } : {})
+      ...(toolUseId !== undefined ? { toolUseId } : {})
     })
   }
   // Live foreground work is not in a BACKGROUND roster and is not superseded

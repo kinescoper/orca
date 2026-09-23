@@ -46,13 +46,18 @@ function toolUse(id: string, name: string, input: unknown, parentToolUseId: stri
     }
   })
 }
-function toolResult(toolUseId: string, text: string, parentToolUseId: string | null = null) {
+function toolResult(
+  toolUseId: string,
+  text: string,
+  parentToolUseId: string | null = null,
+  isError = false
+) {
   return frame({
     type: 'user',
     parent_tool_use_id: parentToolUseId,
     message: {
       role: 'user',
-      content: [{ type: 'tool_result', tool_use_id: toolUseId, content: text }]
+      content: [{ type: 'tool_result', tool_use_id: toolUseId, content: text, is_error: isError }]
     }
   })
 }
@@ -70,6 +75,8 @@ async function producer() {
     })()
   })
   const deliveries: Delivery[] = []
+  /** The producer linkage the journal stamped on each child row. */
+  const stamps: { providerParentRef?: string; attempt?: number }[] = []
   const evidenceLog: AgentChildWorkEvidence[][] = []
   const adapter = new ClaudeStructuredSessionAdapter({
     resolveLaunch: async () => ({
@@ -95,8 +102,12 @@ async function producer() {
     }
   })
   const journal: StructuredAgentSessionEventSink = {
-    appendItem: (identity) =>
-      deliveries.push({ kind: 'journal', detail: JSON.stringify(identity) }),
+    appendItem: (identity, _body, options) => {
+      deliveries.push({ kind: 'journal', detail: JSON.stringify(identity) })
+      if (options?.agentId !== undefined) {
+        stamps.push(options)
+      }
+    },
     appendTombstone: () => {},
     publish: () => {}
   }
@@ -114,7 +125,7 @@ async function producer() {
   const records = (): AgentChildWorkRecord[] => store.getChildren(parent)
   const byDescription = (description: string) =>
     records().find((record) => record.description === description)
-  return { adapter, store, send, records, byDescription, evidenceLog }
+  return { adapter, store, send, records, byDescription, evidenceLog, stamps }
 }
 
 describe('Claude structured child-work producer', () => {
@@ -312,5 +323,63 @@ describe('Claude structured child-work producer', () => {
     await adapter.closeSession('session-1')
     expect(records()).toEqual([])
     expect(adapter.backgroundTaskState('session-1')).toBeUndefined()
+  })
+
+  it("counts a child's runs the way the journal does, and hears a restarted run before any roster", async () => {
+    const { adapter, send, byDescription, stamps } = await producer()
+    const start = (toolUseId: string) =>
+      system('task_started', {
+        task_id: 'agent-fg',
+        tool_use_id: toolUseId,
+        task_type: 'local_agent',
+        description: 'Find flaky tests',
+        is_backgrounded: false
+      })
+    const childSays = (toolUseId: string, text: string) =>
+      frame({
+        type: 'assistant',
+        parent_tool_use_id: toolUseId,
+        message: { id: `msg-${text}`, role: 'assistant', content: [{ type: 'text', text }] }
+      })
+    // The journal stamps a child row with its roster attempt only once it is past the first.
+    const runs = (toolUseId: string) => ({
+      generation: byDescription('Find flaky tests')?.invocation.generation,
+      attempt: stamps.findLast((stamp) => stamp.providerParentRef === toolUseId)?.attempt ?? 1
+    })
+    send(toolUse('toolu_1', 'Agent', { description: 'Find flaky tests' }))
+    send(start('toolu_1'))
+    send(childSays('toolu_1', 'first run'))
+    expect(runs('toolu_1')).toEqual({ generation: 1, attempt: 1 })
+    send(toolResult('toolu_1', 'Found it'))
+    send(system('task_notification', { task_id: 'agent-fg', status: 'completed' }))
+
+    // The provider runs the finished child again under a new spawn call.
+    send(toolUse('toolu_2', 'Agent', { description: 'Find flaky tests' }))
+    const legacy = adapter.backgroundTaskState('session-1')
+    send(start('toolu_2'))
+    // The legacy row still waits for a roster; the record hears the new run now.
+    expect(adapter.backgroundTaskState('session-1')).toEqual(legacy)
+    send(childSays('toolu_2', 'second run'))
+    expect(runs('toolu_2')).toEqual({ generation: 2, attempt: 2 })
+    send(
+      system('task_progress', {
+        task_id: 'agent-fg',
+        last_tool_name: 'Grep',
+        usage: { total_tokens: 300, tool_uses: 1, duration_ms: 10 }
+      })
+    )
+    expect(byDescription('Find flaky tests')).toMatchObject({
+      membership: 'live',
+      operation: { toolName: 'Grep', basis: 'reported' },
+      totalTokens: 300
+    })
+    send(toolResult('toolu_2', 'Could not reproduce', null, true))
+    expect(byDescription('Find flaky tests')).toMatchObject({
+      membership: 'settled',
+      outcome: 'failed',
+      lastMessage: 'Could not reproduce',
+      invocation: { invocationId: 'toolu_2', generation: 2 },
+      previousInvocations: [expect.objectContaining({ outcome: 'succeeded' })]
+    })
   })
 })

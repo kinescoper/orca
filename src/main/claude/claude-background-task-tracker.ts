@@ -21,13 +21,13 @@ import {
   claudeTaskProgressFacts,
   pendingClaudeInventory,
   pendingClaudeNotification,
-  pendingClaudeRestart,
   pendingClaudeSessionEnded,
   pendingClaudeTaskLive,
   pendingClaudeTerminalUpdate,
   pendingClaudeTurnEnded,
   type ClaudePendingChildWork
 } from './claude-child-work-evidence'
+import { ClaudeTaskRestarts } from './claude-background-task-restarts'
 import {
   ClaudeSettledBackgroundTasks,
   claudeBackgroundTaskDetail,
@@ -51,6 +51,7 @@ export class ClaudeBackgroundTaskTracker {
   private readonly retention = new ClaudeSettledBackgroundTasks()
   /** Terminal edges seen, with the spawn call each ended under. */
   private readonly terminalTaskIds = new Map<string, string | undefined>()
+  private readonly restarts = new ClaudeTaskRestarts()
   /** Child-work evidence decided since the last drain; see `claude-child-work-evidence`. */
   private readonly childWork: ClaudePendingChildWork[] = []
   private aggregateRosterObserved = false
@@ -71,13 +72,7 @@ export class ClaudeBackgroundTaskTracker {
   }
 
   get stoppableTaskIds(): string[] {
-    const ids: string[] = []
-    for (const [id, task] of this.tasks) {
-      if (task.backgrounded) {
-        ids.push(id)
-      }
-    }
-    return ids
+    return [...this.tasks].flatMap(([id, task]) => (task.backgrounded ? [id] : []))
   }
 
   /** The evidence queued since the last drain, stamped with the host clock of the caller. */
@@ -101,7 +96,7 @@ export class ClaudeBackgroundTaskTracker {
       this.childWork.push(pendingClaudeTurnEnded)
     }
     // The legacy row keeps a foreground child until `result`; only the record learns its ending.
-    this.childWork.push(...claudeSpawnResults(message, this.tasks))
+    this.childWork.push(...claudeSpawnResults(message, [this.tasks, this.restarts.tasks]))
     if (message.type === 'system') {
       if (!this.observeSystemFrame(message) && !startsTurn) {
         return false
@@ -116,6 +111,7 @@ export class ClaudeBackgroundTaskTracker {
     this.tasks.clear()
     this.retention.clear()
     this.terminalTaskIds.clear()
+    this.restarts.clear()
     this.aggregateRosterObserved = false
     this.childWork.push(pendingClaudeSessionEnded)
     return this.refreshMonitoring()
@@ -163,9 +159,10 @@ export class ClaudeBackgroundTaskTracker {
       // Progress `description` is the current activity ("Running <tool>"), not
       // the task's name — only usage (and a missing identity) may update.
       const existing = this.tasks.get(id)
-      if (existing) {
+      const run = existing ?? this.restarts.get(id)
+      if (run) {
         // Every child's progress reaches its record; the legacy row takes a background one's usage.
-        const named = { ...existing, name: existing.name ?? taskName(message) }
+        const named = { ...run, name: run.name ?? taskName(message) }
         this.childWork.push(pendingClaudeTaskLive(id, named, claudeTaskProgressFacts(message)))
       }
       const totalTokens = taskUsageTotalTokens(message)
@@ -182,7 +179,7 @@ export class ClaudeBackgroundTaskTracker {
       return false
     }
     if (this.terminalTaskIds.has(id)) {
-      const restart = pendingClaudeRestart(id, message, this.terminalTaskIds.get(id))
+      const restart = this.restarts.observe(id, message, this.terminalTaskIds.get(id))
       if (restart) {
         this.childWork.push(restart)
       }
@@ -260,6 +257,7 @@ export class ClaudeBackgroundTaskTracker {
       tasks: this.tasks,
       retention: this.retention,
       terminalTaskIds: this.terminalTaskIds,
+      restarts: this.restarts,
       now: this.now,
       maxTasks: MAX_TRACKED_TASKS
     })
@@ -308,7 +306,8 @@ export class ClaudeBackgroundTaskTracker {
   }
 
   private finish(id: string): void {
-    const toolUseId = this.tasks.get(id)?.toolUseId
+    const restarted = this.restarts.take(id)
+    const toolUseId = (this.tasks.get(id) ?? restarted)?.toolUseId
     this.tasks.delete(id)
     this.terminalTaskIds.delete(id)
     this.terminalTaskIds.set(id, toolUseId)
