@@ -57,9 +57,6 @@ export function recordedCreatorIdentity(creator: DispatchCreator): {
  * no creator and keep counting, which is the pre-v37 answer and fails closed.
  */
 function isSelfCreatedDispatch(row: DispatchContextRow): boolean {
-  if (row.creator_actor && row.creator_actor === row.assignee_actor) {
-    return true
-  }
   if (row.creator_pane_key && row.assignee_pane_key) {
     return isEquivalentPaneKey(row.creator_pane_key, row.assignee_pane_key)
   }

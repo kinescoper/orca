@@ -302,6 +302,53 @@ describe('a structured chat coordinates through the same verbs as a terminal', (
   })
 })
 
+describe('a session with no Run, and receipts that carry no caller param', () => {
+  let h: SessionCallerHarness
+
+  beforeEach(() => {
+    h = createSessionCallerHarness(hostRef)
+  })
+
+  afterEach(() => {
+    h.close()
+    vi.restoreAllMocks()
+  })
+
+  it('reads its direct mailbox on a consuming check, as a terminal with a live pane does', async () => {
+    h.db.insertMessage({ from: WORKER_HANDLE, to: ACTOR_X, subject: 'direct', body: '' })
+
+    const checked = resultOf(
+      await h.dispatch(orchestrationRequest('orchestration.check', {}, { sessionId: SESSION_X }))
+    )
+
+    expect(checked).toMatchObject({ messages: [{ subject: 'direct', to_handle: ACTOR_X }] })
+  })
+
+  it('binds a receipt to the session even when the method names no caller', async () => {
+    const reset = (sessionId: string) =>
+      h.dispatch(
+        orchestrationRequest(
+          'orchestration.reset',
+          { messages: true },
+          {
+            sessionId,
+            requestId: 'reset-1'
+          }
+        )
+      )
+
+    expect(await reset(SESSION_X)).toMatchObject({ ok: true })
+    expect(await reset(SESSION_X)).toMatchObject({
+      ok: true,
+      result: { mutation: { replayed: true } }
+    })
+    expect(await reset(SESSION_Y)).toMatchObject({
+      ok: false,
+      error: { code: 'request_mismatch' }
+    })
+  })
+})
+
 describe('a structured worker that names itself by session id', () => {
   let h: SessionCallerHarness
   const workerSession = SESSION_Y

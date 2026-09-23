@@ -347,24 +347,4 @@ describe('Dispatch actors recorded by every writer', () => {
 
     expect(db.getDispatchContextById(started.dispatch.id)?.assignee_actor).toBe(WORKER_ACTOR)
   })
-
-  it('counts a Dispatch whose creator and assignee are the same actor as bookkeeping', () => {
-    db = new OrchestrationDb(':memory:')
-    const worker = {
-      kind: 'terminal',
-      handle: mintStructuredWorkerHandle(),
-      paneKey: mintStructuredWorkerPaneKey(WORKER_SESSION),
-      actor: WORKER_ACTOR
-    } as const
-    db.createDispatchContext({
-      taskId: db.createTask({ runId: 'run_legacy_local', spec: 'own' }).id,
-      assigneeHandle: worker.handle,
-      assigneePaneKey: 'tab_elsewhere:33333333-3333-4333-8333-333333333333',
-      processIncarnation: structuredWorkerProcessIncarnation(WORKER_SESSION),
-      creator: worker,
-      maxDepth: UNCAPPED
-    })
-
-    expect(db.resolveCreatorDepth(worker)).toBe(0)
-  })
 })
