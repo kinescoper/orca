@@ -86,7 +86,7 @@ async function producer() {
     now: () => 1_700_000_000_500,
     persistHandle: async () => {},
     onBackgroundTasksChanged: (_sessionId, state) =>
-      deliveries.push({ kind: 'legacy', detail: String(state?.tasks.length ?? 0) }),
+      deliveries.push({ kind: 'legacy', detail: String(state?.tasks?.length ?? 0) }),
     onChildWorkEvidence: (sessionId, evidence) => {
       expect(sessionId).toBe('session-1')
       deliveries.push({ kind: 'evidence', detail: evidence.map((edge) => edge.type).join(',') })
