@@ -31,7 +31,7 @@ vi.mock('../../native-chat/agent-session-wire/structured-agent-session-registry'
 }))
 
 // Fields that name a party. They name the caller only in the methods ORCHESTRATION_CALLER_PARAM lists.
-const CALLER_SHAPED_FIELDS = ['from', 'terminal', 'callerTerminalHandle'] as const
+const PARTY_NAMING_FIELDS = ['from', 'terminal', 'callerTerminalHandle'] as const
 // Methods with such a field that never reads it as the caller's identity, for any actor.
 const NAMES_A_PARTY_BUT_NOT_THE_CALLER: Readonly<Record<string, string>> = {
   'orchestration.run': 'retired; refused before any handler',
@@ -75,12 +75,12 @@ describe('orchestration session callers at the dispatch entry', () => {
 
   it('lists exactly the methods whose params name their caller, and classifies every other one', () => {
     const registry = buildRegistry(ORCHESTRATION_METHODS)
-    const callerShaped = [...registry.values()]
+    const partyNaming = [...registry.values()]
       .filter((method) => {
         const schema = method.params
         return (
           schema instanceof ZodObject &&
-          CALLER_SHAPED_FIELDS.some((field) => Object.hasOwn(schema.shape, field))
+          PARTY_NAMING_FIELDS.some((field) => Object.hasOwn(schema.shape, field))
         )
       })
       .map((method) => method.name)
@@ -88,8 +88,8 @@ describe('orchestration session callers at the dispatch entry', () => {
 
     // The population: 41 registered methods, 21 of which carry a party-naming field.
     expect(registry.size).toBe(41)
-    expect(callerShaped).toHaveLength(21)
-    expect(callerShaped).toEqual(
+    expect(partyNaming).toHaveLength(21)
+    expect(partyNaming).toEqual(
       [
         ...Object.keys(ORCHESTRATION_CALLER_PARAM),
         ...Object.keys(NAMES_A_PARTY_BUT_NOT_THE_CALLER)
