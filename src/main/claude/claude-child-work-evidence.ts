@@ -27,7 +27,14 @@ import {
 } from './claude-background-task-frames'
 import { isAgentChildWorkKind } from '../../shared/agent-status-child-work-liveness'
 import type { TrackedClaudeBackgroundTask } from './claude-settled-background-tasks'
-import { claudeToolResults, readClaudeMessageEnvelope } from './claude-structured-item-translation'
+import type { ClaudeSession } from './claude-structured-session-state'
+import { deriveToolInputPreview } from '../../shared/agent-hook-listener/tool-input-preview'
+import {
+  claudeToolResults,
+  claudeToolUses,
+  readClaudeMessageEnvelope,
+  type ClaudeToolUse
+} from './claude-structured-item-translation'
 
 /** An edge the tracker decided on, stamped with the host clock once the frame is journaled. */
 export type ClaudePendingChildWork = (observedAt: number) => AgentChildWorkEvidence
@@ -264,4 +271,58 @@ export function withClaudeChildWorkOwners(
         ? { ...edge, children: edge.children.map(owned) }
         : edge
   )
+}
+
+/**
+ * A child's own tool traffic, read after the journal handled the frame: the call the child has
+ * open now (a foreground child's traffic reaches the parent's stream; a backgrounded child's does
+ * not), previewed as a hook-reported row previews its own tool. A frame that only delivers the
+ * caller's own spawn result belongs to the caller, not the child it names.
+ */
+export function claudeChildOperation(
+  message: Record<string, unknown>,
+  activityOf:
+    | ((parentToolUseId: string) => { agentId: string; openTool: ClaudeToolUse | null })
+    | undefined,
+  observedAt: number
+): AgentChildWorkEvidence[] {
+  const envelope = activityOf ? readClaudeMessageEnvelope(message) : null
+  const parentRef = envelope?.parentToolUseId
+  if (!envelope || !parentRef || !activityOf) {
+    return []
+  }
+  const toolTraffic =
+    claudeToolUses(envelope).length > 0 ||
+    claudeToolResults(envelope).some((result) => result.toolUseId !== parentRef)
+  if (!toolTraffic) {
+    return []
+  }
+  const { agentId, openTool } = activityOf(parentRef)
+  const input = openTool ? deriveToolInputPreview(openTool.name, openTool.input) : undefined
+  return [
+    {
+      type: 'operation',
+      observedAt,
+      childId: agentId,
+      operation: openTool
+        ? { toolName: openTool.name, ...(input ? { input } : {}), basis: 'open', observedAt }
+        : null
+    }
+  ]
+}
+
+/** Everything one frame (or a close) said about the session's child work, owners named. */
+export function drainClaudeChildWork(
+  session: Pick<ClaudeSession, 'backgroundTasks' | 'translator'> | null | undefined,
+  message: Record<string, unknown> | null,
+  observedAt: number
+): AgentChildWorkEvidence[] {
+  if (!session) {
+    return []
+  }
+  const decided = session.backgroundTasks.drainChildWorkEvidence(observedAt)
+  return [
+    ...withClaudeChildWorkOwners(decided, session.translator?.childToolOwner),
+    ...(message ? claudeChildOperation(message, session.translator?.childActivity, observedAt) : [])
+  ]
 }

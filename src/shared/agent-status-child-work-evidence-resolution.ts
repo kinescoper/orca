@@ -20,7 +20,6 @@ import { agentStatusSubjectsEqual, type AgentStatusSubject } from './agent-statu
  *  a handle is unique per parent and provider without being unique across producers. */
 export const STRUCTURED_CHILD_WORK_PRODUCER_ID = 'structured-session-child-work'
 const SEGMENT_ID = STRUCTURED_CHILD_WORK_PRODUCER_ID
-const STABLE_ALIAS_KINDS: ReadonlySet<AgentChildWorkAliasKind> = new Set(['task_id', 'thread_id'])
 const RUN_ALIAS_KIND: AgentChildWorkAliasKind = 'tool_use_id'
 
 export const STRUCTURED_CHILD_WORK_PROVENANCE: AgentChildWorkProvenance = {
@@ -137,16 +136,34 @@ export function resolveAgentChildWorkOwner(
   return resolution?.child?.childWorkId
 }
 
+function isStableAliasKind(
+  kind: AgentChildWorkAliasKind
+): kind is AgentChildWorkEvidenceHandle['idKind'] {
+  return kind === 'task_id' || kind === 'thread_id'
+}
+
 /** The handles a record answers to for its current run. */
 export function currentAgentChildWorkAliases(
   scope: AgentChildWorkEvidenceScope,
   child: AgentChildWorkRecord
-): { stableId?: string; runId?: string; aliases: AgentChildWorkObservationAlias[] } {
+): {
+  stable?: AgentChildWorkEvidenceHandle
+  stableId?: string
+  runId?: string
+  aliases: AgentChildWorkObservationAlias[]
+} {
   const current = scope.store
     .getAliasesForChild(child.childWorkId)
     .filter((alias) => agentChildWorkFencesEqual(alias.fence, child.invocation))
+  let stable: AgentChildWorkEvidenceHandle | undefined
+  for (const alias of current) {
+    if (!stable && isStableAliasKind(alias.aliasKind)) {
+      stable = { idKind: alias.aliasKind, id: alias.alias }
+    }
+  }
   return {
-    stableId: current.find((alias) => STABLE_ALIAS_KINDS.has(alias.aliasKind))?.alias,
+    ...(stable ? { stable } : {}),
+    stableId: stable?.id,
     runId: current.find((alias) => alias.aliasKind === RUN_ALIAS_KIND)?.alias,
     aliases: current.map((alias) => ({
       segmentId: alias.segmentId,

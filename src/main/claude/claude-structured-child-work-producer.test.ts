@@ -170,7 +170,14 @@ describe('Claude structured child-work producer', () => {
           { command: 'npm test', run_in_background: true },
           'toolu_fg'
         ),
-        lead: 'working'
+        lead: 'working',
+        // Its own call is what it is doing, previewed as a CLI row previews Bash.
+        check: () =>
+          expect(byDescription('Find flaky tests')?.operation).toMatchObject({
+            toolName: 'Bash',
+            input: 'npm test',
+            basis: 'open'
+          })
       },
       {
         message: system('task_started', {
@@ -191,6 +198,11 @@ describe('Claude structured child-work producer', () => {
           expect(byDescription('npm test')?.parentChildWorkId).toBe(
             byDescription('Find flaky tests')?.childWorkId
           )
+      },
+      {
+        message: toolResult('toolu_bash', 'Command running in background', 'toolu_fg'),
+        lead: 'working',
+        check: () => expect(byDescription('Find flaky tests')?.operation).toBeUndefined()
       },
       {
         message: system('task_progress', {

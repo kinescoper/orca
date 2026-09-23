@@ -60,6 +60,8 @@ export type ClaudeJournalTranslator = {
   /** The agent (its canonical task id) whose own traffic made a tool call; null when the session's
    *  own agent made it, or it was never seen. The same answer a row that call produced carries. */
   childToolOwner?: (toolUseId: string) => string | null
+  /** The child a frame's `parent_tool_use_id` names, and its newest call still awaiting a result. */
+  childActivity?: (parentToolUseId: string) => { agentId: string; openTool: ClaudeToolUse | null }
   retryPendingTaskRows?: () => StructuredAgentSessionSinkAdmission
   /** Streamed blocks still awaiting a final frame. A settled turn leaves none. */
   readonly pendingStreamedBlocks: number
@@ -326,6 +328,16 @@ export function createClaudeJournalTranslator(
       return ownerRef === null
         ? null
         : (subagents.linkage.settledLinkageFor(ownerRef).linkage.agentId ?? null)
+    },
+    childActivity: (parentToolUseId) => {
+      let openTool: ClaudeToolUse | null = null
+      for (const tool of tools.values()) {
+        if (toolOrigins.childOwnerRef(tool.id) === parentToolUseId) {
+          openTool = tool
+        }
+      }
+      const { agentId } = subagents.linkage.settledLinkageFor(parentToolUseId).linkage
+      return { agentId: agentId ?? parentToolUseId, openTool }
     },
     retryPendingTaskRows: () => backgroundTasks.retryPendingWrites(),
     get pendingStreamedBlocks() {

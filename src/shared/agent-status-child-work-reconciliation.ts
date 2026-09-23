@@ -9,7 +9,8 @@ import type { AgentChildWorkAdmission } from './agent-status-child-work-admissio
 import type {
   AgentChildWorkEndedEvidence,
   AgentChildWorkEvidence,
-  AgentChildWorkInventoryEvidence
+  AgentChildWorkInventoryEvidence,
+  AgentChildWorkOperationEvidence
 } from './agent-status-child-work-evidence'
 import {
   applyAgentChildWorkLive,
@@ -60,6 +61,36 @@ function applyEnded(ctx: ReconcileContext, edge: AgentChildWorkEndedEvidence): v
     ...(edge.lastMessage !== undefined ? { lastMessage: edge.lastMessage } : {}),
     ...(edge.totalTokens !== undefined ? { totalTokens: edge.totalTokens } : {})
   })
+}
+
+/** A live child's current operation, and nothing else about it. */
+function applyOperation(ctx: ReconcileContext, edge: AgentChildWorkOperationEvidence): void {
+  const resolution = resolveAgentChildWorkHandle(
+    ctx,
+    ['task_id', 'thread_id', 'tool_use_id'],
+    edge.childId
+  )
+  const record = resolution?.ambiguous ? null : resolution?.child
+  if (!record || record.membership !== 'live' || record.state === 'done' || !record.residency) {
+    return
+  }
+  const { stable, runId } = currentAgentChildWorkAliases(ctx, record)
+  if (!stable) {
+    return
+  }
+  applyAgentChildWorkLive(
+    ctx,
+    {
+      handle: { ...stable, ...(runId !== undefined ? { runId } : {}) },
+      kind: record.kind,
+      residency: record.residency,
+      state: record.state,
+      stoppable: record.stoppable,
+      operation: edge.operation
+    },
+    edge.observedAt,
+    false
+  )
 }
 
 function applyInventory(ctx: ReconcileContext, edge: AgentChildWorkInventoryEvidence): void {
@@ -131,6 +162,8 @@ export function reconcileAgentChildWorkEvidence(
     }
     if (edge.type === 'live') {
       applyAgentChildWorkLive(ctx, edge.child, edge.observedAt, false)
+    } else if (edge.type === 'operation') {
+      applyOperation(ctx, edge)
     } else if (edge.type === 'ended') {
       applyEnded(ctx, edge)
     } else if (edge.type === 'inventory') {

@@ -32,7 +32,7 @@ import {
 } from './claude-structured-session-exit-lifecycle'
 import type { AgentSessionBackgroundTaskState } from '../../shared/agent-session-wire'
 import { resolveClaudeProviderHistoryWindow } from './claude-structured-history-window'
-import { withClaudeChildWorkOwners } from './claude-child-work-evidence'
+import { drainClaudeChildWork } from './claude-child-work-evidence'
 import {
   admitClaudePromptCancellation,
   answerClaudeStructuredPrompt,
@@ -197,14 +197,17 @@ export class ClaudeStructuredSessionAdapter implements StructuredAgentSessionAda
         session ? backgroundTaskState(session) : null
       )
     }
-    this.publishChildWork(event.sessionId, session)
+    this.publishChildWork(event.sessionId, session, event.type === 'message' ? event.message : null)
   }
 
   /** After the journal handled the frame and the parent's own row was republished: the host
    *  never holds a child record ahead of the rows that frame wrote, and never before its parent. */
-  private publishChildWork(sessionId: string, session: ClaudeSession | null | undefined): void {
-    const drained = session?.backgroundTasks.drainChildWorkEvidence(this.deps.now?.() ?? Date.now())
-    const evidence = withClaudeChildWorkOwners(drained ?? [], session?.translator?.childToolOwner)
+  private publishChildWork(
+    sessionId: string,
+    session: ClaudeSession | null | undefined,
+    message: Record<string, unknown> | null = null
+  ): void {
+    const evidence = drainClaudeChildWork(session, message, this.deps.now?.() ?? Date.now())
     if (evidence.length > 0) {
       this.deps.onChildWorkEvidence?.(sessionId, evidence)
     }

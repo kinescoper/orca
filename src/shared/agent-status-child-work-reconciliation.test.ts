@@ -263,6 +263,38 @@ describe('structured child-work reconciliation', () => {
     expect(only(store).operation).toBeUndefined()
   })
 
+  it("sets a live child's open call by any handle it answers to, and never creates a child", () => {
+    const { store, apply } = harness()
+    const bash = { toolName: 'Bash', input: 'npm test', basis: 'open', observedAt: 110 } as const
+    apply({ type: 'operation', observedAt: 110, childId: 'nobody', operation: bash })
+    expect(records(store)).toEqual([])
+    apply(live(child('task-a')), {
+      type: 'operation',
+      observedAt: 110,
+      childId: 'toolu_task-a',
+      operation: bash
+    })
+    expect(only(store)).toMatchObject({
+      operation: bash,
+      observedAt: 110,
+      description: 'Task task-a',
+      invocation: { generation: 1 }
+    })
+    apply({ type: 'operation', observedAt: 120, childId: 'task-a', operation: null })
+    expect(only(store).operation).toBeUndefined()
+    apply(
+      {
+        type: 'ended',
+        observedAt: 130,
+        handle: { idKind: 'task_id', id: 'task-a' },
+        outcome: 'succeeded'
+      },
+      { type: 'operation', observedAt: 140, childId: 'task-a', operation: bash }
+    )
+    expect(only(store)).toMatchObject({ membership: 'settled', observedAt: 130 })
+    expect(only(store).operation).toBeUndefined()
+  })
+
   it('folds raw provider labels to one line before admission', () => {
     const { store, apply } = harness()
     const result = apply(

@@ -48,6 +48,17 @@ export type AgentChildWorkLiveEvidence = {
   child: AgentChildWorkLiveObservation
 }
 
+/** A child's own tool traffic: the call it has open now, or that none is open any more. Applies
+ *  only to a child already recorded live; it never creates one. */
+export type AgentChildWorkOperationEvidence = {
+  type: 'operation'
+  observedAt: number
+  /** Any handle the child answers to: its stable id, or the spawn call of its run. */
+  childId: string
+  /** `null`: the call it had open has ended. */
+  operation: AgentChildWorkOperation | null
+}
+
 /** The child's own terminal frame. `unknown` is an ending whose status the provider did not say. */
 export type AgentChildWorkEndedEvidence = {
   type: 'ended'
@@ -75,6 +86,7 @@ export type AgentChildWorkSessionEndedEvidence = { type: 'session-ended'; observ
 
 export type AgentChildWorkEvidence =
   | AgentChildWorkLiveEvidence
+  | AgentChildWorkOperationEvidence
   | AgentChildWorkEndedEvidence
   | AgentChildWorkInventoryEvidence
   | AgentChildWorkTurnEndedEvidence
