@@ -10,6 +10,11 @@ import { OrcaRuntimeRpcServer } from '../runtime-rpc'
 import { buildRegistry } from './core'
 import { ORCHESTRATION_METHODS } from './methods/orchestration'
 import {
+  mintStructuredWorkerHandle,
+  mintStructuredWorkerPaneKey,
+  structuredWorkerProcessIncarnation
+} from '../structured-worker-identity'
+import {
   ACTOR_X,
   createSessionCallerHarness,
   orchestrationRequest,
@@ -17,6 +22,7 @@ import {
   idOf,
   resultOf,
   SESSION_X,
+  SESSION_Y,
   sessionRecord,
   type SessionCallerHarness
 } from './orchestration-session-caller-test-fixture'
@@ -287,6 +293,37 @@ describe('orchestration session callers at the dispatch entry', () => {
       await expectRefusedWithNoEffects(SESSION_X, CODES.hostBoundary, /a WSL environment/, {
         host: { kind: 'wsl', hostId: 'local', distro: 'Ubuntu' }
       })
+    })
+
+    it('a structured worker session whose worker identity this host no longer has', async () => {
+      // A Dispatch recorded the session as a worker; no registry entry or custody row maps it now.
+      const run = h.db.createRun({
+        objective: 'pty',
+        coordinatorHandle: 'term_c',
+        coordinatorPaneKey: 'tab_c:13131313-1313-4313-8313-131313131313'
+      })
+      h.db.createDispatchContext({
+        taskId: h.db.createTask({ runId: run.id, spec: 'work' }).id,
+        assigneeHandle: mintStructuredWorkerHandle(),
+        assigneePaneKey: mintStructuredWorkerPaneKey(SESSION_Y),
+        processIncarnation: structuredWorkerProcessIncarnation(SESSION_Y),
+        creator: { kind: 'system' },
+        maxDepth: Number.MAX_SAFE_INTEGER
+      })
+
+      const response = await h.dispatch(
+        orchestrationRequest(
+          'orchestration.runCreate',
+          { objective: 'o' },
+          { sessionId: SESSION_Y }
+        )
+      )
+
+      expect(response).toMatchObject({
+        ok: false,
+        error: { code: CODES.notLive, message: expect.stringContaining('no longer has') }
+      })
+      expect(h.db.listRuns().runs.filter((row) => row.coordinator_actor !== null)).toEqual([])
     })
 
     it('an agent-session host that cannot be brought up to verify it', async () => {

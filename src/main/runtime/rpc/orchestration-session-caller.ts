@@ -24,6 +24,7 @@ import { getStructuredAgentSessionHost } from '../../native-chat/agent-session-w
 import type { OrcaRuntimeService } from '../orca-runtime'
 import type { OrchestrationSessionCaller } from '../orchestration/orchestration-caller-identity'
 import { OrchestrationError } from '../orchestration/orchestration-error'
+import { isRecordedStructuredWorkerActor } from '../orchestration/db/schema/structured-worker-actor-backfill'
 import { resolveStructuredWorkerIdentityForSession } from '../structured-worker-authority'
 import { structuredWorkerHostScope } from '../structured-worker-identity'
 import type { RpcRequest } from './core'
@@ -107,7 +108,16 @@ export async function resolveOrchestrationSessionCaller(
   const sessionId = actor.id
   const record = await readSessionRecord(runtime, sessionId)
   assertSessionCanAct(sessionId, record)
-  const worker = resolveStructuredWorkerIdentityForSession(sessionId, runtime.getOrchestrationDb())
+  const db = runtime.getOrchestrationDb()
+  const worker = resolveStructuredWorkerIdentityForSession(sessionId, db)
+  if (!worker && isRecordedStructuredWorkerActor(db.db, formatOrchestrationActor(actor))) {
+    // Why: acting handle-less would split one worker into two identities, and bind like a chat.
+    throw new OrchestrationError(
+      CODES.notLive,
+      `Agent session ${sessionId} is a structured worker whose worker identity this host no longer has, so it cannot act in orchestration. No effects were applied.`,
+      NO_EFFECTS
+    )
+  }
   const terminalHandle = worker?.handle ?? null
   const caller: OrchestrationSessionCaller = Object.freeze({
     sessionId,

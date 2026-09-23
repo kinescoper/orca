@@ -1,13 +1,15 @@
 import type Database from '../../../../sqlite/sync-database'
 import {
   formatOrchestrationActor,
+  parseOrchestrationActor,
   sessionOrchestrationActor
 } from '../../../../../shared/orchestration-actor'
 import {
   STRUCTURED_WORKER_HANDLE_PREFIX,
   STRUCTURED_WORKER_INCARNATION_PREFIX,
   isStructuredWorkerHandle,
-  sessionIdFromStructuredWorkerIncarnation
+  sessionIdFromStructuredWorkerIncarnation,
+  structuredWorkerProcessIncarnation
 } from '../../../structured-worker-identity'
 import { currentRunCoordinatorActorSql } from '../runs/run-coordinator-actor'
 
@@ -35,7 +37,7 @@ const RECORDED_WORKER_SESSIONS_SQL = `
  *
  * Runs after migrate on every open, not only once at v42: a binary rolled back past v42 keeps
  * writing structured-worker rows without an actor after user_version is already 42. It fills only
- * rows with no actor that counts, so an actor a writer recorded is never rewritten.
+ * rows with no actor that counts, so an actor a writer recorded is never rewritten; the one clear is the unbind residue below.
  */
 export function backfillStructuredWorkerActors(db: Database.Database): void {
   let recordedSessions: Map<string, Set<string>> | undefined
@@ -110,6 +112,51 @@ export function backfillStructuredWorkerActors(db: Database.Database): void {
     const actor = actorFor(row.coordinator_handle, null)
     if (actor && typeof row.id === 'string') {
       setCoordinator.run(actor, row.id)
+    }
+  }
+  clearUnboundStructuredWorkerCoordinatorActors(db)
+}
+
+/**
+ * Whether this actor was assigned a Dispatch as a structured worker. Such a session always binds a
+ * Run with its worker handle, so it can never hold a handle-less binding.
+ */
+export function isRecordedStructuredWorkerActor(db: Database.Database, actor: string): boolean {
+  const sessionId = parseOrchestrationActor(actor)?.id
+  return Boolean(
+    sessionId &&
+    db
+      .prepare(
+        `SELECT 1 FROM dispatch_contexts
+         WHERE assignee_actor = ? AND process_incarnation = ? LIMIT 1`
+      )
+      .get(actor, structuredWorkerProcessIncarnation(sessionId))
+  )
+}
+
+/**
+ * A binary without the actor column unbinds a structured worker's Run by clearing its handle and
+ * pane, which leaves the actor looking like a handle-less chat's binding. Only that unbind can make
+ * this shape for a worker's actor, so the actor goes; a chat coordinator's binding is untouched.
+ */
+function clearUnboundStructuredWorkerCoordinatorActors(db: Database.Database): void {
+  const handleless = db
+    .prepare(
+      `SELECT id, coordinator_actor FROM runs
+       WHERE coordinator_actor IS NOT NULL AND coordinator_handle IS NULL
+         AND coordinator_pane_key IS NULL`
+    )
+    .all()
+  const clear = db.prepare(
+    `UPDATE runs SET coordinator_actor = NULL
+     WHERE id = ? AND coordinator_handle IS NULL AND coordinator_pane_key IS NULL`
+  )
+  for (const row of handleless) {
+    const actor = row.coordinator_actor
+    if (typeof row.id === 'string' && typeof actor === 'string') {
+      if (isRecordedStructuredWorkerActor(db, actor)) {
+        clear.run(row.id)
+      }
     }
   }
 }
