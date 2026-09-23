@@ -150,9 +150,9 @@ export function runsBoundToCoordinator(
     return caller.paneKey === null ? [] : this.runsBoundToPane(caller.paneKey)
   }
   const suffix = caller.paneKey === null ? null : paneKeyMatchSuffix(caller.paneKey)
-  return (
-    this.db.prepare(RUNS_BOUND_TO_COORDINATOR_SQL).all(suffix, caller.actor) as RunRow[]
-  ).filter((run) => runBoundToCoordinator(run, caller))
+  const rows = this.db.prepare(RUNS_BOUND_TO_COORDINATOR_SQL).all(suffix, caller.actor)
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: SELECT * over this table returns the row shape its schema and row type define, like every row cast in db/.
+  return (rows as RunRow[]).filter((run) => runBoundToCoordinator(run, caller))
 }
 
 export function unbindOtherRunsForCoordinator(

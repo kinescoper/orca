@@ -32,9 +32,10 @@ export function findActiveDispatchForDirectMessageOwner(
          WHERE run_id = ? AND assignee_actor = ? AND status IN ('pending', 'dispatched')
          ORDER BY rowid DESC LIMIT 1`
       )
-      .get(runId, directHandle) as DispatchContextRow | undefined
+      .get(runId, directHandle)
     if (byActor) {
-      return byActor
+      // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: SELECT * over this table returns the row shape its schema and row type define, like every row cast in db/.
+      return byActor as DispatchContextRow
     }
   }
   if (!paneKey || !parsePaneKey(paneKey)) {

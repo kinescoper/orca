@@ -63,29 +63,24 @@ export class RpcStreamingDispatcher {
       return
     }
 
-    const parsedParams = parseRpcRequestParams(request, method, envelopeMeta)
-    if (parsedParams.error) {
-      reply(JSON.stringify(parsedParams.error))
-      return
-    }
-    // Why: before the unary/streaming split, so both branches see the same resolved caller.
-    let resolved: ResolvedOrchestrationRequest = { request, params: parsedParams.value }
+    // Why: before params parse and the unary/streaming split, so both branches see one caller.
+    let resolved: ResolvedOrchestrationRequest = { request }
     if (claimsOrchestrationSession(request)) {
       try {
-        resolved = await resolveOrchestrationSessionCaller(
-          runtime,
-          request,
-          resolved.params,
-          options
-        )
+        resolved = await resolveOrchestrationSessionCaller(runtime, request, options)
       } catch (error) {
         reply(JSON.stringify(mapDispatcherError(request, envelopeMeta, error)))
         return
       }
     }
     request = resolved.request
-    const params = resolved.params
     const orchestrationCaller = resolved.caller
+    const parsedParams = parseRpcRequestParams(request, method, envelopeMeta)
+    if (parsedParams.error) {
+      reply(JSON.stringify(parsedParams.error))
+      return
+    }
+    const params = parsedParams.value
 
     if (!isStreamingMethod(method)) {
       try {

@@ -1,7 +1,8 @@
 /**
  * Resolves an orchestration caller that names itself by the Orca agent session id in its injected
- * environment. Both dispatchers call this once, after params parse and before the unary/streaming
- * split, so it runs ahead of legacy compatibility, receipt lookup and every method.
+ * environment. Both dispatchers call this once, before params parse and the unary/streaming split,
+ * so it runs ahead of legacy compatibility, receipt lookup and every method. Before parsing, so a
+ * session caller need not name itself in a param that requires a caller.
  *
  * The id names the caller; nothing here is a credential. Every agent on this host runs as the same
  * user, so the checks are about getting the identity right, not about keeping anyone out:
@@ -59,8 +60,8 @@ export type OrchestrationRequestRoute = {
 }
 
 export type ResolvedOrchestrationRequest = {
+  /** The request with its declared caller bound to the session and its evidence reduced to it. */
   request: RpcRequest
-  params: unknown
   caller?: OrchestrationSessionCaller
 }
 
@@ -81,7 +82,6 @@ export function claimsOrchestrationSession(request: RpcRequest): boolean {
 export async function resolveOrchestrationSessionCaller(
   runtime: OrcaRuntimeService,
   request: RpcRequest,
-  params: unknown,
   route: OrchestrationRequestRoute | undefined
 ): Promise<ResolvedOrchestrationRequest> {
   const evidence = request.orchestrationCompatibilityEvidence
@@ -118,9 +118,12 @@ export async function resolveOrchestrationSessionCaller(
     workspaceId: record.location.workspaceId
   })
   return {
-    // Why: the session wins, so terminal evidence inherited from a terminal view never attests.
-    request: { ...request, orchestrationCompatibilityEvidence: { agentSessionId: sessionId } },
-    params: bindDeclaredCaller(request.method, params, caller),
+    request: {
+      ...request,
+      params: bindDeclaredCaller(request.method, request.params, caller),
+      // Why: the session wins, so terminal evidence inherited from a terminal view never attests.
+      orchestrationCompatibilityEvidence: { agentSessionId: sessionId }
+    },
     caller
   }
 }

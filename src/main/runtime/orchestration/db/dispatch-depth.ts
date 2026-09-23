@@ -140,18 +140,18 @@ function findActiveDispatchForCreator(
   this: OrchestrationDb,
   creator: Exclude<DispatchCreator, { kind: 'system' }>
 ): DispatchContextRow | undefined {
-  if (creator.kind === 'actor') {
-    return this.db
-      .prepare(
-        `SELECT * FROM dispatch_contexts
-         WHERE assignee_actor = ? AND status IN ('pending', 'dispatched')
-         ORDER BY rowid DESC LIMIT 1`
-      )
-      .get(creator.actor) as DispatchContextRow | undefined
+  if (creator.kind === 'terminal') {
+    return this.findActiveDispatchForAssignee(creator.handle, creator.paneKey)
   }
-  return this.findActiveDispatchForAssignee(creator.handle, creator.paneKey) as
-    | DispatchContextRow
-    | undefined
+  const row = this.db
+    .prepare(
+      `SELECT * FROM dispatch_contexts
+       WHERE assignee_actor = ? AND status IN ('pending', 'dispatched')
+       ORDER BY rowid DESC LIMIT 1`
+    )
+    .get(creator.actor)
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: SELECT * over this table returns the row shape its schema and row type define, like every row cast in db/.
+  return row as DispatchContextRow | undefined
 }
 
 /**

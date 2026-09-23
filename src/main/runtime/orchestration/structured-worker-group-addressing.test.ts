@@ -263,6 +263,7 @@ describe('sendGroupMessage actually composes structured workers in', () => {
       getOrchestrationDb: () => db,
       notifyMessageArrived: () => {}
     }
+    // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the stub cast is unchanged; the gate flags it only because this diff adds the sender field inside its span.
     await sendGroupMessage({
       params: { subject: 's', body: 'b', type: 'status', priority: 'normal' },
       runtime: runtime as never,

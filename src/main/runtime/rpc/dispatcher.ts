@@ -74,22 +74,17 @@ export class RpcDispatcher {
       return migrationFence
     }
 
-    const parsedParams = parseRpcRequestParams(request, method, meta)
-    if (parsedParams.error) {
-      return parsedParams.error
-    }
-    let resolved: ResolvedOrchestrationRequest = { request, params: parsedParams.value }
+    let resolved: ResolvedOrchestrationRequest = { request }
     if (claimsOrchestrationSession(request)) {
       try {
-        resolved = await resolveOrchestrationSessionCaller(
-          this.runtime,
-          request,
-          resolved.params,
-          options
-        )
+        resolved = await resolveOrchestrationSessionCaller(this.runtime, request, options)
       } catch (error) {
         return mapDispatcherError(request, meta, error)
       }
+    }
+    const parsedParams = parseRpcRequestParams(resolved.request, method, meta)
+    if (parsedParams.error) {
+      return parsedParams.error
     }
 
     if (isStreamingMethod(method)) {
@@ -109,7 +104,7 @@ export class RpcDispatcher {
         runtime: this.runtime,
         request: resolved.request,
         method,
-        params: resolved.params,
+        params: parsedParams.value,
         context: {
           runtime: this.runtime,
           signal: options?.signal,

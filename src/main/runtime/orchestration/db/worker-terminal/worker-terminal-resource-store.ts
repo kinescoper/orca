@@ -127,12 +127,14 @@ export function getWorkerTerminalResourceByProcessIncarnation(
   this: OrchestrationDb,
   processIncarnation: string
 ): WorkerTerminalResourceRow | undefined {
-  return this.db
+  const row = this.db
     .prepare(
       `SELECT * FROM worker_terminal_resources
         WHERE process_incarnation = ? ORDER BY updated_at DESC LIMIT 1`
     )
-    .get(processIncarnation) as WorkerTerminalResourceRow | undefined
+    .get(processIncarnation)
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: SELECT * over this table returns the row shape its schema and row type define, like every row cast in db/.
+  return row as WorkerTerminalResourceRow | undefined
 }
 
 export function getWorkerTerminalResourceFormerlyOwnedBy(
