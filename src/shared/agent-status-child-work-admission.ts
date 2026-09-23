@@ -4,10 +4,12 @@ import type {
   AgentChildWorkInvocationFence,
   AgentChildWorkKind,
   AgentChildWorkMembership,
+  AgentChildWorkOperation,
   AgentChildWorkOutcome,
   AgentChildWorkProviderTiming,
   AgentChildWorkProvenance,
   AgentChildWorkRecord,
+  AgentChildWorkResidency,
   AgentChildWorkState
 } from './agent-status-child-work'
 import {
@@ -37,6 +39,12 @@ export type AgentChildWorkObservationFields = {
   model?: string
   totalTokens?: number
   providerTiming?: AgentChildWorkProviderTiming
+  parentChildWorkId?: AgentChildWorkId
+  residency?: AgentChildWorkResidency
+  /** Raw provider text is fine: admission folds it to the one-line previews a status row uses,
+   *  and drops it when the state cannot carry an operation (settled, idle, unverifiable). */
+  operation?: AgentChildWorkOperation
+  lastMessage?: string
   observedAt: number
   stoppable: boolean
   provenance: AgentChildWorkProvenance

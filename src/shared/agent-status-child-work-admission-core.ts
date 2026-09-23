@@ -4,14 +4,22 @@ import {
   type AgentChildWorkAliasRecord
 } from './agent-status-child-work-alias'
 import {
+  AGENT_CHILD_WORK_LAST_MESSAGE_MAX_LENGTH,
   agentChildWorkFencesEqual,
   type AgentChildWorkId,
   type AgentChildWorkInput,
   type AgentChildWorkInvocationFence,
   type AgentChildWorkKind,
+  type AgentChildWorkOperation,
   type AgentChildWorkRecord
 } from './agent-status-child-work'
 import { parseAgentChildWorkInput } from './agent-status-child-work-codec'
+import { agentChildWorkAllowsOperation } from './agent-status-child-work-legality'
+import { normalizeOptionalField } from './agent-status-field-normalization'
+import {
+  AGENT_STATUS_TOOL_INPUT_MAX_LENGTH,
+  AGENT_STATUS_TOOL_NAME_MAX_LENGTH
+} from './agent-status-types'
 import type {
   AgentChildWorkAdmissionResult,
   AgentChildWorkAdoptRequest,
@@ -73,18 +81,61 @@ export function buildAgentChildWorkAliases(
   return built
 }
 
+/** The fields only the host writes: identity, the invocation, and when it settled. */
+export type AgentChildWorkHostFields = {
+  childWorkId: AgentChildWorkId
+  firstObservedAt: number
+  invocation: AgentChildWorkInvocationFence
+  previousInvocations?: AgentChildWorkInput['previousInvocations']
+  settledAt?: number
+}
+
+/** Stamped once, when the current invocation first settles; later settled evidence keeps it. */
+export function agentChildWorkSettledAt(
+  request: Pick<AgentChildWorkObservationFields, 'membership' | 'observedAt'>,
+  current?: Pick<AgentChildWorkRecord, 'membership' | 'settledAt'>
+): number | undefined {
+  if (request.membership !== 'settled') {
+    return undefined
+  }
+  return current?.membership === 'settled' && current.settledAt !== undefined
+    ? current.settledAt
+    : request.observedAt
+}
+
+function admittedOperation(
+  request: AgentChildWorkObservationFields
+): AgentChildWorkOperation | undefined {
+  const operation = request.operation
+  if (!operation || !agentChildWorkAllowsOperation(request.membership, request.state)) {
+    return undefined
+  }
+  const toolName = normalizeOptionalField(operation.toolName, AGENT_STATUS_TOOL_NAME_MAX_LENGTH)
+  const input = normalizeOptionalField(operation.input, AGENT_STATUS_TOOL_INPUT_MAX_LENGTH)
+  return toolName
+    ? {
+        toolName,
+        ...(input ? { input } : {}),
+        basis: operation.basis,
+        observedAt: operation.observedAt
+      }
+    : undefined
+}
+
 export function buildAgentChildWork(
   request: AgentChildWorkObservationFields & {
     parent: AgentStatusSubject
     provider: string
   },
-  childWorkId: string,
-  firstObservedAt: number,
-  invocation: AgentChildWorkInvocationFence,
-  previousInvocations?: AgentChildWorkInput['previousInvocations']
+  host: AgentChildWorkHostFields
 ): AgentChildWorkInput | null {
+  const operation = admittedOperation(request)
+  const lastMessage = normalizeOptionalField(
+    request.lastMessage,
+    AGENT_CHILD_WORK_LAST_MESSAGE_MAX_LENGTH
+  )
   return parseAgentChildWorkInput({
-    childWorkId,
+    childWorkId: host.childWorkId,
     parent: request.parent,
     provider: request.provider,
     kind: request.kind,
@@ -97,11 +148,20 @@ export function buildAgentChildWork(
     ...(request.model !== undefined ? { model: request.model } : {}),
     ...(request.totalTokens !== undefined ? { totalTokens: request.totalTokens } : {}),
     ...(request.providerTiming !== undefined ? { providerTiming: request.providerTiming } : {}),
-    firstObservedAt,
+    ...(request.parentChildWorkId !== undefined
+      ? { parentChildWorkId: request.parentChildWorkId }
+      : {}),
+    ...(request.residency !== undefined ? { residency: request.residency } : {}),
+    ...(operation ? { operation } : {}),
+    ...(lastMessage ? { lastMessage } : {}),
+    firstObservedAt: host.firstObservedAt,
     observedAt: request.observedAt,
+    ...(host.settledAt !== undefined ? { settledAt: host.settledAt } : {}),
     stoppable: request.stoppable,
-    invocation,
-    ...(previousInvocations !== undefined ? { previousInvocations } : {}),
+    invocation: host.invocation,
+    ...(host.previousInvocations !== undefined
+      ? { previousInvocations: host.previousInvocations }
+      : {}),
     provenance: request.provenance
   })
 }
@@ -134,17 +194,18 @@ export function updateExistingAgentChildWork(
     child.membership === 'settled' &&
     (request.membership !== 'settled' ||
       request.state !== child.state ||
-      request.outcome !== child.outcome)
+      // An omitted outcome was stored as `unknown`, so repeating the omission is the same ending.
+      (request.outcome ?? 'unknown') !== child.outcome)
   ) {
     return rejectAgentChildWorkAdmission('stale-invocation')
   }
-  const updated = buildAgentChildWork(
-    request,
-    child.childWorkId,
-    child.firstObservedAt,
-    child.invocation,
-    child.previousInvocations
-  )
+  const updated = buildAgentChildWork(request, {
+    childWorkId: child.childWorkId,
+    firstObservedAt: child.firstObservedAt,
+    invocation: child.invocation,
+    previousInvocations: child.previousInvocations,
+    settledAt: agentChildWorkSettledAt(request, child)
+  })
   return updated
     ? commitAgentChildWork(store, updated, aliases, false, removeAliases)
     : rejectAgentChildWorkAdmission('invalid')
