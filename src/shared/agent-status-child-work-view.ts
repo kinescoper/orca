@@ -1,7 +1,8 @@
 import { foldAgentLeadStatus } from './agent-lead-status-fold'
-import type {
-  AgentChildWorkAliasInput,
-  AgentChildWorkAliasKind
+import {
+  AGENT_CHILD_WORK_ALIAS_KINDS,
+  type AgentChildWorkAliasInput,
+  type AgentChildWorkAliasKind
 } from './agent-status-child-work-alias'
 import {
   agentChildWorkFencesEqual,
@@ -54,12 +55,16 @@ export type AgentChildWorkViewAlias = Pick<
   'childWorkId' | 'aliasKind' | 'alias' | 'fence'
 >
 
-// Stable handles before per-call ones: a spawn's tool id changes on every resume.
-const PROVIDER_ID_ALIAS_ORDER: readonly AgentChildWorkAliasKind[] = [
-  'task_id',
-  'thread_id',
-  'tool_use_id'
-]
+// Stable handles before per-call ones: a spawn's tool id changes on every resume. Keyed by kind so
+// a new alias kind cannot compile without a rank (an unranked kind would lose its row's providerId).
+const PROVIDER_ID_ALIAS_RANK: Record<AgentChildWorkAliasKind, number> = {
+  task_id: 0,
+  thread_id: 1,
+  tool_use_id: 2
+}
+const PROVIDER_ID_ALIAS_ORDER = [...AGENT_CHILD_WORK_ALIAS_KINDS].sort(
+  (left, right) => PROVIDER_ID_ALIAS_RANK[left] - PROVIDER_ID_ALIAS_RANK[right]
+)
 
 function providerIdFor(
   record: AgentChildWorkInput,

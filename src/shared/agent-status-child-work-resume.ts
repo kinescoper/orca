@@ -67,13 +67,17 @@ export function resumeAgentChildWork(
       ...(child.settledAt !== undefined ? { settledAt: child.settledAt } : {})
     }
   ].slice(-AGENT_CHILD_WORK_INVOCATION_HISTORY_MAX)
-  const resumed = buildAgentChildWork(request, {
-    childWorkId: child.childWorkId,
-    firstObservedAt: child.firstObservedAt,
-    invocation: nextFence,
-    previousInvocations,
-    settledAt: agentChildWorkSettledAt(request)
-  })
+  const resumed = buildAgentChildWork(
+    request,
+    {
+      childWorkId: child.childWorkId,
+      firstObservedAt: child.firstObservedAt,
+      invocation: nextFence,
+      previousInvocations,
+      settledAt: agentChildWorkSettledAt(request)
+    },
+    child
+  )
   const retainedFences = [nextFence, ...previousInvocations.map((entry) => entry.fence)]
   const removeAliases = agentChildWorkAliasesForChild(store, child.childWorkId)
     .filter(
