@@ -9,6 +9,9 @@ CREATE TABLE IF NOT EXISTS runs (
   coordinator_handle    TEXT,
   coordinator_pane_key  TEXT,
   coordinator_actor     TEXT,
+  -- The consumer_generation coordinator_actor was written at; the actor counts only while they are
+  -- equal (run-coordinator-actor). So bump consumer_generation for a rebind or unbind and nothing else.
+  coordinator_actor_generation INTEGER,
   consumer_generation   INTEGER NOT NULL DEFAULT 0,
   legacy                INTEGER NOT NULL DEFAULT 0,
   created_at            TEXT NOT NULL DEFAULT (datetime('now')),

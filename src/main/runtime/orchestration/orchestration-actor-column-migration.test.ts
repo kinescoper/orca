@@ -10,6 +10,10 @@ import {
 } from '../structured-worker-identity'
 import { OrchestrationDb } from './db'
 import { SCHEMA_VERSION } from './db/contract-constants'
+import {
+  currentRunCoordinatorActor,
+  currentRunCoordinatorActorSql
+} from './db/runs/run-coordinator-actor'
 import { resolveOrchestrationMigrationStartVersion } from './orchestration-schema-version-skew'
 
 const SESSION_ID = '5f0c1d9e-2b7a-4c3e-8f61-0a9d2e7b4c11'
@@ -106,6 +110,7 @@ function stripActorSchema(path: string, version: number): void {
     DROP TRIGGER trg_runs_remember_coordinator_insert;
     DROP TRIGGER trg_runs_remember_coordinator_update;
     ALTER TABLE runs DROP COLUMN coordinator_actor;
+    ALTER TABLE runs DROP COLUMN coordinator_actor_generation;
     ALTER TABLE dispatch_contexts DROP COLUMN assignee_actor;
     ALTER TABLE dispatch_contexts DROP COLUMN creator_actor;
     ${HANDLE_ONLY_COORDINATOR_TRIGGERS_SQL}
@@ -204,7 +209,7 @@ describe('orchestration actor column migration', () => {
       )
       // CREATE TRIGGER IF NOT EXISTS alone would have kept the handle-only form here.
       for (const sql of coordinatorTriggerSql(db.db)) {
-        expect(sql).toContain('COALESCE(NEW.coordinator_handle, NEW.coordinator_actor)')
+        expect(sql).toContain('NEW.coordinator_actor_generation = NEW.consumer_generation')
       }
     } finally {
       db.close()
@@ -269,7 +274,7 @@ describe('orchestration actor column migration', () => {
     try {
       expect(db.db.pragma('user_version', { simple: true })).toBe(SCHEMA_VERSION)
       for (const sql of coordinatorTriggerSql(db.db)) {
-        expect(sql).toContain('COALESCE(NEW.coordinator_handle, NEW.coordinator_actor)')
+        expect(sql).toContain('NEW.coordinator_actor_generation = NEW.consumer_generation')
       }
       expect(db.getRunRaw(rows.structuredRunId)?.coordinator_actor).toBe(SESSION_ACTOR)
       expect(coordinatorAddresses(db.db, [rows.ptyRunId])).toEqual([`${rows.ptyRunId} term_coord`])
@@ -287,8 +292,9 @@ describe('orchestration actor column migration', () => {
     expect(upgraded.getRunRaw(rows.structuredRunId)?.coordinator_actor).toBe(SESSION_ACTOR)
     upgraded.db
       .prepare(
-        `INSERT INTO runs (id, objective, coordinator_actor, consumer_generation, legacy)
-         VALUES ('run_session', 'session coordinator', ?, 1, 0)`
+        `INSERT INTO runs (
+           id, objective, coordinator_actor, coordinator_actor_generation, consumer_generation, legacy
+         ) VALUES ('run_session', 'session coordinator', ?, 1, 1, 0)`
       )
       .run(CHAT_SESSION_ACTOR)
     upgraded.close()
@@ -366,6 +372,10 @@ describe('orchestration actor column migration', () => {
       expect(rolledForward.getRunMailboxOwnerIdsForHandle(CHAT_SESSION_ACTOR)).toEqual([
         'run_session'
       ])
+      // v41's rebind bumped the generation, so the actor it could not clear no longer counts.
+      const rebound = rolledForward.getRunRaw(rows.structuredRunId)
+      expect(rebound?.coordinator_actor).toBe(SESSION_ACTOR)
+      expect(rebound && currentRunCoordinatorActor(rebound)).toBeNull()
     } finally {
       rolledForward.close()
     }
@@ -446,6 +456,101 @@ describe('orchestration actor column migration', () => {
           coordinatorPaneKey: 'tab_after:55555555-5555-4555-8555-555555555555'
         })
       ).not.toThrow()
+    } finally {
+      db.close()
+    }
+  })
+
+  it('stops counting a chat coordinator actor once a v41 binary rebinds and then unbinds the Run', () => {
+    const path = tempDbPath()
+    const seeded = new OrchestrationDb(path)
+    seeded.db
+      .prepare(
+        `INSERT INTO runs (
+           id, objective, coordinator_actor, coordinator_actor_generation, consumer_generation, legacy
+         ) VALUES ('run_chat', 'chat coordinated', ?, 1, 1, 0)`
+      )
+      .run(CHAT_SESSION_ACTOR)
+    // The cache row this binding wrote; a later open must not be able to write it back.
+    seeded.db.prepare('DELETE FROM run_coordinator_handles WHERE run_id = ?').run('run_chat')
+    seeded.close()
+
+    // Each statement below is v41's own SQL.
+    const v41 = new Database(path)
+    // A terminal takes the Run over (bindRun)...
+    v41
+      .prepare(
+        `UPDATE runs SET coordinator_handle = ?, coordinator_pane_key = ?,
+           consumer_generation = consumer_generation + 1, updated_at = datetime('now')
+         WHERE id = ?`
+      )
+      .run('term_taker', PTY_WORKER_PANE, 'run_chat')
+    // ...then claims another Run from the same pane, which unbinds this one (unbindOtherRunsForPane).
+    v41
+      .prepare(
+        `UPDATE runs SET coordinator_handle = NULL, coordinator_pane_key = NULL,
+           consumer_generation = consumer_generation + 1, updated_at = datetime('now')
+         WHERE id = ?`
+      )
+      .run('run_chat')
+    // Without the generation this row is byte-identical to a live chat binding.
+    expect(
+      v41
+        .prepare(
+          `SELECT coordinator_handle, coordinator_pane_key, coordinator_actor, consumer_generation
+           FROM runs WHERE id = ?`
+        )
+        .get('run_chat')
+    ).toEqual({
+      coordinator_handle: null,
+      coordinator_pane_key: null,
+      coordinator_actor: CHAT_SESSION_ACTOR,
+      consumer_generation: 3
+    })
+    v41.close()
+
+    const reopened = new OrchestrationDb(path)
+    try {
+      const run = reopened.getRunRaw('run_chat')
+      expect(run && currentRunCoordinatorActor(run)).toBeNull()
+      expect(
+        reopened.db
+          .prepare(`SELECT id FROM runs WHERE ${currentRunCoordinatorActorSql('runs')} = ?`)
+          .all(CHAT_SESSION_ACTOR)
+      ).toEqual([])
+      expect(coordinatorAddresses(reopened.db, ['run_chat'])).toEqual(['run_chat term_taker'])
+    } finally {
+      reopened.close()
+    }
+  })
+
+  it('replays a database stamped v42 before the coordinator actor carried its generation', () => {
+    const path = tempDbPath()
+    const seed = new OrchestrationDb(path)
+    const rows = seedStructuredAndPtyRows(seed)
+    seed.close()
+    const raw = new Database(path)
+    raw.exec(`
+      DROP TRIGGER trg_runs_remember_coordinator_insert;
+      DROP TRIGGER trg_runs_remember_coordinator_update;
+      ALTER TABLE runs DROP COLUMN coordinator_actor_generation;
+      ${HANDLE_ONLY_COORDINATOR_TRIGGERS_SQL}
+    `)
+    raw.pragma('user_version = 42')
+    try {
+      expect(resolveOrchestrationMigrationStartVersion(raw, 42, SCHEMA_VERSION)).toBe(6)
+    } finally {
+      raw.close()
+    }
+
+    const db = new OrchestrationDb(path)
+    try {
+      expect(db.db.pragma('user_version', { simple: true })).toBe(SCHEMA_VERSION)
+      for (const sql of coordinatorTriggerSql(db.db)) {
+        expect(sql).toContain('NEW.coordinator_actor_generation = NEW.consumer_generation')
+      }
+      const run = db.getRunRaw(rows.structuredRunId)
+      expect(run && currentRunCoordinatorActor(run)).toBe(SESSION_ACTOR)
     } finally {
       db.close()
     }

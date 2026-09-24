@@ -9,6 +9,9 @@ import {
   isStructuredWorkerHandle,
   sessionIdFromStructuredWorkerIncarnation
 } from '../../../structured-worker-identity'
+import { currentRunCoordinatorActorSql } from '../runs/run-coordinator-actor'
+
+const CURRENT_COORDINATOR_ACTOR_SQL = currentRunCoordinatorActorSql('runs')
 
 // GLOB is a case-sensitive prefix filter; the canonical predicates still decide every row.
 const HANDLE_GLOB = `${STRUCTURED_WORKER_HANDLE_PREFIX}*`
@@ -31,8 +34,8 @@ const RECORDED_WORKER_SESSIONS_SQL = `
  * rows carrying them were written by this host.
  *
  * Runs after migrate on every open, not only once at v42: a binary rolled back past v42 keeps
- * writing structured-worker rows without an actor after user_version is already 42. It fills NULLs
- * only, so an actor a writer recorded is never rewritten.
+ * writing structured-worker rows without an actor after user_version is already 42. It fills only
+ * rows with no actor that counts, so an actor a writer recorded is never rewritten.
  */
 export function backfillStructuredWorkerActors(db: Database.Database): void {
   let recordedSessions: Map<string, Set<string>> | undefined
@@ -92,14 +95,16 @@ export function backfillStructuredWorkerActors(db: Database.Database): void {
     }
   }
 
+  // A coordinator actor left at an older generation counts as none, so the handle's session fills it.
   const coordinators = db
     .prepare(
       `SELECT id, coordinator_handle FROM runs
-       WHERE coordinator_actor IS NULL AND coordinator_handle GLOB ?`
+       WHERE ${CURRENT_COORDINATOR_ACTOR_SQL} IS NULL AND coordinator_handle GLOB ?`
     )
     .all(HANDLE_GLOB)
   const setCoordinator = db.prepare(
-    'UPDATE runs SET coordinator_actor = ? WHERE id = ? AND coordinator_actor IS NULL'
+    `UPDATE runs SET coordinator_actor = ?, coordinator_actor_generation = consumer_generation
+     WHERE id = ? AND ${CURRENT_COORDINATOR_ACTOR_SQL} IS NULL`
   )
   for (const row of coordinators) {
     const actor = actorFor(row.coordinator_handle, null)

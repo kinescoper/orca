@@ -48,6 +48,8 @@ export type RunRow = {
   coordinator_pane_key: string | null
   /** `session:<id>` for a structured-session coordinator; NULL for a PTY one. See orchestration-actor. */
   coordinator_actor: string | null
+  /** The consumer_generation the actor was written at; see currentRunCoordinatorActor. */
+  coordinator_actor_generation: number | null
   consumer_generation: number
   legacy: number
   created_at: string

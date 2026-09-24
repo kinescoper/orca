@@ -117,4 +117,35 @@ describe('structured worker actor backfill', () => {
 
     expect(actors(id).assignee).toBe(`session:${SESSION_C}`)
   })
+
+  it("fills a worker-coordinated Run over an actor an older binding's generation left behind", () => {
+    db = new OrchestrationDb(':memory:')
+    const runFor = (sessionId: string): string => {
+      const handle = mintStructuredWorkerHandle()
+      const paneKey = mintStructuredWorkerPaneKey(sessionId)
+      dispatch({ handle, paneKey, incarnation: structuredWorkerProcessIncarnation(sessionId) })
+      return db.createRun({
+        objective: sessionId,
+        coordinatorHandle: handle,
+        coordinatorPaneKey: paneKey
+      }).id
+    }
+    const stale = runFor(SESSION_A)
+    const recorded = runFor(SESSION_B)
+    const setActor = db.db.prepare(
+      `UPDATE runs SET coordinator_actor = ?, coordinator_actor_generation = consumer_generation - ?
+       WHERE id = ?`
+    )
+    // An older binary rebound this Run to the worker over session C's actor, which it cannot see.
+    setActor.run(`session:${SESSION_C}`, 1, stale)
+    // A writer recorded this one at the current generation.
+    setActor.run(`session:${SESSION_C}`, 0, recorded)
+
+    backfillStructuredWorkerActors(db.db)
+
+    const filled = db.getRunRaw(stale)
+    expect(filled?.coordinator_actor).toBe(`session:${SESSION_A}`)
+    expect(filled?.coordinator_actor_generation).toBe(filled?.consumer_generation)
+    expect(db.getRunRaw(recorded)?.coordinator_actor).toBe(`session:${SESSION_C}`)
+  })
 })

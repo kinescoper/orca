@@ -45,6 +45,7 @@ const VERSIONED_POST_V6_COLUMNS = [
   { version: 37, table: 'dispatch_contexts', column: 'creator_pane_key' },
   { version: 40, table: 'remote_dispatch_attachments', column: 'home_run_id' },
   { version: 42, table: 'runs', column: 'coordinator_actor' },
+  { version: 42, table: 'runs', column: 'coordinator_actor_generation' },
   { version: 42, table: 'dispatch_contexts', column: 'assignee_actor' },
   { version: 42, table: 'dispatch_contexts', column: 'creator_actor' }
 ] as const

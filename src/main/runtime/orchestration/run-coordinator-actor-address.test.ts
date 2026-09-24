@@ -31,8 +31,9 @@ function addressesFor(db: OrchestrationDb, runId: string): string[] {
 function insertSessionCoordinatedRun(db: OrchestrationDb, runId: string): void {
   db.db
     .prepare(
-      `INSERT INTO runs (id, objective, coordinator_actor, consumer_generation, legacy)
-       VALUES (?, 'coordinated by a structured session', ?, 1, 0)`
+      `INSERT INTO runs (
+         id, objective, coordinator_actor, coordinator_actor_generation, consumer_generation, legacy
+       ) VALUES (?, 'coordinated by a structured session', ?, 1, 1, 0)`
     )
     .run(runId, CHAT_ACTOR)
 }
@@ -82,7 +83,10 @@ describe('Run coordinator actor address', () => {
       )
       .run()
     db.db
-      .prepare('UPDATE runs SET coordinator_actor = ? WHERE id = ?')
+      .prepare(
+        `UPDATE runs SET coordinator_actor = ?, coordinator_actor_generation = consumer_generation
+         WHERE id = ?`
+      )
       .run(CHAT_ACTOR, 'run_unbound')
     expect(addressesFor(db, 'run_unbound')).toEqual([CHAT_ACTOR])
     db.db.prepare('DELETE FROM run_coordinator_handles WHERE run_id = ?').run('run_unbound')
