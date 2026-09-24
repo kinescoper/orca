@@ -269,9 +269,13 @@ that publishes `mainAgent`, the inference is admitted only when
 prompt of a row held open by child work as a turn cancel (Codex also keeps the
 child-evidence guard, and a row without `mainAgent` keeps only that guard).
 The keypress itself is not inert, though: measured live, Claude 2.1.280 stops
-its background subagents on a single idle-prompt Ctrl+C (shells survive) and
-Codex 0.156.1 quits outright, so refusing the inference can leave the row
-showing a subagent its CLI already stopped. The synthesized row is the fold
+its background subagents on a single idle-prompt Ctrl+C (shells and scheduled
+checks survive; no hook fires) and Codex 0.156.1 quits outright. For Claude,
+Orca mirrors exactly that: the same keypress on a settled `mainAgent` retires
+the row's agent children — the listener roster on a local pane, the row's own
+snapshots on a relayed one — and nothing else, with no verdict stamped, so the
+row keeps monitoring a surviving shell and settles to done only when nothing
+is left (`claude-idle-ctrl-c-*` fixtures pin this). The synthesized row is the fold
 of the cancelled main agent with the child work the pane's owner can see: the
 local listener's roster for a local pane, the row's own subagents and shell fact
 for a relayed one, whose provider records live on the relay.

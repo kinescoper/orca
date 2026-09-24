@@ -248,3 +248,71 @@ describe('a relayed Claude cancel with a background shell (captured)', () => {
     expect(row(pane.desktop).mainAgent).not.toHaveProperty('outcome')
   })
 })
+
+describe('a relayed idle-prompt Ctrl+C with a background shell and a background agent (captured)', () => {
+  const records = loadCapture('claude-idle-ctrl-c-bg-agent-hooks')
+  const upToCancel = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((index) => hookAt(records, index))
+
+  it("retires the row's agent snapshots and keeps the shell, without a verdict", async () => {
+    const pane = await startSshPane(new AgentHookServer())
+    await postCaptured(pane, upToCancel)
+    expect(row(pane.desktop)).toMatchObject({
+      state: 'working',
+      mainAgent: { state: 'done' },
+      subagents: [expect.objectContaining({ state: 'working' })]
+    })
+
+    // The keypress reaches the CLI on the remote host and kills its agents there; the desktop
+    // holds only the row, so the row's own snapshots and shell fact are what the retirement reads.
+    expect(pressCtrlC(pane.desktop)).toBe(true)
+    expect(row(pane.desktop)).toMatchObject({
+      state: 'working',
+      workingMode: 'monitoring',
+      mainAgent: { state: 'done' }
+    })
+    expect(row(pane.desktop).subagents).toBeUndefined()
+    expect(row(pane.desktop).interrupted).toBeUndefined()
+    expect(row(pane.desktop).mainAgent).not.toHaveProperty('outcome')
+
+    // The relay never learns of the keypress, so a reconnect replay restates the roster it still
+    // holds. There is no verdict to latch — the dead child reappears until the next inventory,
+    // which is the same re-derivation every roster claim lives under.
+    expect(pane.relay.replayCachedPayloadsForPanes()).toBe(1)
+    expect(row(pane.desktop)).toMatchObject({
+      state: 'working',
+      subagents: [expect.objectContaining({ state: 'working' })]
+    })
+
+    // The next typed turn's Stop carries the relay listener's own corrected inventory.
+    await pane.post(hookAt(records, 11).payload)
+    await pane.post(hookAt(records, 12).payload)
+    expect(row(pane.desktop)).toMatchObject({
+      state: 'working',
+      workingMode: 'monitoring',
+      mainAgent: { state: 'done' }
+    })
+    expect(row(pane.desktop).subagents).toBeUndefined()
+  })
+
+  it('parks a working teammate-shaped snapshot idle instead of dropping it', async () => {
+    const pane = await startSshPane(new AgentHookServer())
+    await postCaptured(pane, upToCancel)
+    // A teammate joins after the Stop's inventory (whose fold would otherwise reap the id).
+    await pane.post({
+      ...hookAt(records, 8).payload,
+      agent_id: 'aprobe1-6d3cb5b5',
+      agent_type: 'probe1'
+    })
+    expect(row(pane.desktop).subagents).toHaveLength(2)
+
+    expect(pressCtrlC(pane.desktop)).toBe(true)
+    // Why: a teammate's kill is not provable from a snapshot; it parks idle (visible, not
+    // gating), while the one-shot the CLI certainly killed leaves the row.
+    expect(row(pane.desktop)).toMatchObject({
+      state: 'working',
+      workingMode: 'monitoring',
+      subagents: [expect.objectContaining({ id: 'aprobe1-6d3cb5b5', state: 'idle' })],
+      mainAgent: { state: 'done' }
+    })
+  })
+})

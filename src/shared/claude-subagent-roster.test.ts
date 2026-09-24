@@ -9,6 +9,8 @@ import {
   foldClaudeBackgroundTasksIntoRoster,
   idleClaudeTeammateByName,
   reapUnconfirmedRestoredClaudeSubagents,
+  retireWorkingClaudeSubagentSnapshots,
+  stopAllWorkingClaudeSubagents,
   stopClaudeSubagent,
   upsertWorkingClaudeSubagent,
   type ClaudeSubagentRoster
@@ -527,5 +529,52 @@ describe('restored-row liveness reap', () => {
     const roster = restored('aprobe1-6d3cb5b5')
     foldClaudeBackgroundTasksIntoRoster(roster, [task({ id: 'other', teammate: true })], 200)
     expect(roster.has('aprobe1-6d3cb5b5')).toBe(false)
+  })
+
+  // Claude's idle-prompt Ctrl+C kills every background agent at once (measured, no hook follows:
+  // claude-idle-ctrl-c-bg-agent fixture); the retirement must reuse SubagentStop semantics.
+  describe('stopAllWorkingClaudeSubagents', () => {
+    it('removes working one-shots, parks working teammates idle, and keeps idle rows', () => {
+      const roster: ClaudeSubagentRoster = new Map()
+      upsertWorkingClaudeSubagent(roster, 'a1', { agentType: 'general-purpose' }, 100)
+      upsertWorkingClaudeSubagent(roster, 'aprobe1-6d3cb5b5', { agentType: 'probe1' }, 100)
+      upsertWorkingClaudeSubagent(roster, 'arev-2f00', {}, 100)
+      idleClaudeTeammateByName(roster, 'rev')
+      expect(stopAllWorkingClaudeSubagents(roster)).toBe(true)
+      expect(roster.has('a1')).toBe(false)
+      expect(roster.get('aprobe1-6d3cb5b5')).toMatchObject({ state: 'idle' })
+      expect(roster.get('arev-2f00')).toMatchObject({ state: 'idle', confirmedTeammate: true })
+      expect(claudeRosterHasWorkingSubagent(roster)).toBe(false)
+    })
+
+    it('reports an all-idle roster unchanged', () => {
+      const roster: ClaudeSubagentRoster = new Map()
+      upsertWorkingClaudeSubagent(roster, 'arev-2f00', {}, 100)
+      idleClaudeTeammateByName(roster, 'rev')
+      expect(stopAllWorkingClaudeSubagents(roster)).toBe(false)
+      expect(roster.get('arev-2f00')).toMatchObject({ state: 'idle' })
+    })
+  })
+
+  describe('retireWorkingClaudeSubagentSnapshots', () => {
+    it('drops working one-shot snapshots and parks teammate-shaped ones idle', () => {
+      expect(
+        retireWorkingClaudeSubagentSnapshots([
+          { id: 'a1', state: 'working', startedAt: 100 },
+          { id: 'aprobe1-6d3cb5b5', state: 'working', startedAt: 100 },
+          { id: 'arev-2f00', state: 'idle', startedAt: 100 }
+        ])
+      ).toEqual([
+        { id: 'aprobe1-6d3cb5b5', state: 'idle', startedAt: 100 },
+        { id: 'arev-2f00', state: 'idle', startedAt: 100 }
+      ])
+    })
+
+    it('returns undefined when nothing survives, so the row blanks its children', () => {
+      expect(
+        retireWorkingClaudeSubagentSnapshots([{ id: 'a1', state: 'working', startedAt: 100 }])
+      ).toBeUndefined()
+      expect(retireWorkingClaudeSubagentSnapshots(undefined)).toBeUndefined()
+    })
   })
 })

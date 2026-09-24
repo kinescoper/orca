@@ -2,6 +2,12 @@ import {
   markClaudeLeadTurnInterrupted,
   clearClaudeAnsweredQuestionWait
 } from '../../../shared/agent-hook-listener/providers/claude-roster-state'
+import { markClaudeBackgroundAgentsStopped } from '../../../shared/agent-hook-listener/providers/claude-idle-agent-stop'
+import {
+  claudeRosterHasWorkingSubagent,
+  retireWorkingClaudeSubagentSnapshots
+} from '../../../shared/claude-subagent-roster'
+import { mainAgentTurnInterrupted } from '../../../shared/agent-lead-status-fold'
 import { markCodexLeadTurnInterrupted } from '../../../shared/agent-hook-listener/providers/codex-state'
 import {
   isAgentInterruptInputIntent,
@@ -79,6 +85,24 @@ export abstract class AgentHookServerStatusInference extends AgentHookServerRowO
       (agentType === 'claude' &&
         (this.state.claudeRunningNonAgentTaskPaneKeys.has(existing.paneKey) ||
           this.state.claudeActiveSessionCronPaneKeys.has(existing.paneKey)))
+    // Why: measured live (claude-idle-ctrl-c-* fixtures), ONE Ctrl+C at Claude's idle prompt kills
+    // every background agent immediately and emits no hook at all, while shells and scheduled
+    // checks survive. So this keypress on a settled Claude main agent is not a turn cancel to
+    // refuse: it retires the row's agent children — exactly what the CLI did — and touches nothing
+    // else. With no working agent child (shell-only, or the agent already finished) the CLI does
+    // nothing and neither does Orca.
+    if (
+      agentType === 'claude' &&
+      request.intent === 'ctrl-c' &&
+      payload.mainAgent?.state === 'done'
+    ) {
+      const liveAgentChildWork = existing.connectionId
+        ? payload.subagents?.some((subagent) => subagent.state === 'working') === true
+        : claudeRosterHasWorkingSubagent(
+            this.state.claudeSubagentRosterByPaneKey.get(existing.paneKey)
+          )
+      return liveAgentChildWork ? this.applyClaudeIdleBackgroundAgentStop(existing) : false
+    }
     // Why: a 'working' pane can be child-driven, and Ctrl+C at the idle prompt of a main agent that
     // child work holds open cancels nothing, so the main agent fact decides. A row from a host too
     // old to publish `mainAgent` keeps the evidence guard, and so does Codex: its synthesized row is
@@ -142,6 +166,61 @@ export abstract class AgentHookServerStatusInference extends AgentHookServerRowO
       paneKey: inferred.paneKey,
       agentType,
       intent: request.intent
+    })
+    return true
+  }
+
+  /** Claude stopped its background agents on an idle-prompt Ctrl+C: retire the row's agent
+   *  children and republish the fold, leaving the settled main agent's own verdict and every
+   *  shell/cron fact untouched. A local pane retires the listener roster, so a later child event
+   *  cannot re-emit the dead children; a relayed pane's provider records live on the relay, so
+   *  its row's snapshots are the only evidence and the next inventory re-derives the truth. */
+  private applyClaudeIdleBackgroundAgentStop(existing: EnrichedAgentHookEventPayload): boolean {
+    const payload = existing.payload
+    const stopped = existing.connectionId
+      ? undefined
+      : markClaudeBackgroundAgentsStopped(this.state, existing.paneKey)
+    const subagents = stopped
+      ? stopped.subagents
+      : retireWorkingClaudeSubagentSnapshots(payload.subagents)
+    const relayed = stopped
+      ? undefined
+      : foldMainAgentWithRowChildWork('done', {
+          claudeRunningNonAgentTask: existing.claudeRunningNonAgentTask,
+          payload: subagents ? { subagents } : {}
+        })
+    const state = stopped?.state ?? relayed?.stateName ?? 'done'
+    const workingMode = stopped?.workingMode ?? relayed?.workingMode
+    // Why: the keypress ends no turn, so the main agent fact (verdict, clock) passes through as-is.
+    const mainAgent = stopped ? stopped.mainAgent : payload.mainAgent
+    const turnCompletedAt = stopped ? stopped.turnCompletedAt : payload.turnCompletedAt
+    const inferred = this.applyNormalizedStatus({
+      paneKey: existing.paneKey,
+      tabId: existing.tabId,
+      worktreeId: existing.worktreeId,
+      connectionId: existing.connectionId,
+      providerSession: existing.providerSession,
+      // Why: the shell fact is the inventory's, not the keypress's; restate it unchanged.
+      ...(existing.claudeRunningNonAgentTask !== undefined
+        ? { claudeRunningNonAgentTask: existing.claudeRunningNonAgentTask }
+        : {}),
+      payload: {
+        state,
+        ...(workingMode ? { workingMode } : {}),
+        prompt: payload.prompt,
+        agentType: payload.agentType,
+        ...(payload.model ? { model: payload.model } : {}),
+        ...(subagents ? { subagents } : {}),
+        ...(state === 'done' && mainAgentTurnInterrupted(mainAgent) ? { interrupted: true } : {}),
+        ...(turnCompletedAt !== undefined ? { turnCompletedAt } : {}),
+        ...(mainAgent ? { mainAgent } : {})
+      }
+    })
+    if (!inferred) {
+      return false
+    }
+    console.debug('[agent-hooks] inferred Claude idle Ctrl+C stopped background agents', {
+      paneKey: inferred.paneKey
     })
     return true
   }

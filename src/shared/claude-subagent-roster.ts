@@ -131,6 +131,43 @@ export function stopClaudeSubagent(roster: ClaudeSubagentRoster, id: string): vo
   tracked.state = 'idle'
 }
 
+/** Claude 2.1.280's idle-prompt Ctrl+C, measured live (claude-idle-ctrl-c-bg-agent fixture): it
+ *  kills every background agent at once, emits no hook, and leaves shells and crons running.
+ *  Retire every working row with the exact SubagentStop semantics — a one-shot leaves, a
+ *  teammate-shaped id parks idle — so a child the CLI did not actually kill is re-added by its
+ *  own next lifecycle or tool event. Returns whether anything was retired. */
+export function stopAllWorkingClaudeSubagents(roster: ClaudeSubagentRoster): boolean {
+  let changed = false
+  for (const [id, tracked] of roster) {
+    if (tracked.state === 'working') {
+      stopClaudeSubagent(roster, id)
+      changed = true
+    }
+  }
+  return changed
+}
+
+/** The same retirement over a row's snapshots, for a relayed pane where they are the only child
+ *  evidence the desktop holds (the provider records live on the relay host). */
+export function retireWorkingClaudeSubagentSnapshots(
+  snapshots: readonly AgentSubagentSnapshot[] | undefined
+): AgentSubagentSnapshot[] | undefined {
+  if (!snapshots) {
+    return undefined
+  }
+  const retired: AgentSubagentSnapshot[] = []
+  for (const snapshot of snapshots) {
+    if (snapshot.state !== 'working') {
+      retired.push(snapshot)
+    } else if (isClaudeTeammateLifecycleId(snapshot.id)) {
+      // Why: a teammate's kill is not provable from a snapshot; park it idle so it stays visible
+      // without gating the pane 'working', exactly as its own SubagentStop would.
+      retired.push({ ...snapshot, state: 'idle' })
+    }
+  }
+  return retired.length > 0 ? retired : undefined
+}
+
 /** Fold a lead Stop's `background_tasks` into the lifecycle-tracked roster.
  *
  *  The list is authoritative for subagent-typed entries only: a running
