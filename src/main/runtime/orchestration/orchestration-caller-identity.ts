@@ -1,5 +1,6 @@
 import type { RunRow } from './types'
 import { isEquivalentPaneKey } from './db/pane-key-match'
+import { currentRunCoordinatorActor } from './db/runs/run-coordinator-actor'
 
 /**
  * Who an orchestration caller is, as Run binding and mail routing match it.
@@ -38,11 +39,26 @@ export function hasRunBindingKey(caller: OrchestrationCoordinatorKey): boolean {
 }
 
 /**
- * An actor binding counts only while the row's handle is the one that actor binds with: none for a
- * handle-less session, its own handle for a structured worker. Every binary that predates the actor
- * column rewrites `coordinator_handle` whenever it rebinds or unbinds a Run, so an actor it left
- * behind can never satisfy this and is ignored without a cleanup pass.
+ * Every address one party is reachable at. A structured worker has two, its handle and its session
+ * actor, so every consumer that remembers, reroutes or compares a party's mail takes this set.
  */
+export function addressSpellingsOf(
+  party: Pick<OrchestrationCoordinatorKey, 'terminalHandle' | 'actor'>
+): string[] {
+  return [...new Set([party.terminalHandle, party.actor])].filter(
+    (address): address is string => address !== null
+  )
+}
+
+/** Who a Run's binding names now; an actor an older binding left behind is not part of it. */
+export function runCoordinatorKey(run: RunRow): OrchestrationCoordinatorKey {
+  return {
+    terminalHandle: run.coordinator_handle,
+    paneKey: run.coordinator_pane_key,
+    actor: currentRunCoordinatorActor(run)
+  }
+}
+
 export function runBoundToCoordinator(run: RunRow, caller: OrchestrationCoordinatorKey): boolean {
   if (
     caller.paneKey !== null &&
@@ -51,9 +67,5 @@ export function runBoundToCoordinator(run: RunRow, caller: OrchestrationCoordina
   ) {
     return true
   }
-  return (
-    caller.actor !== null &&
-    run.coordinator_actor === caller.actor &&
-    run.coordinator_handle === caller.terminalHandle
-  )
+  return caller.actor !== null && currentRunCoordinatorActor(run) === caller.actor
 }

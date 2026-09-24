@@ -280,11 +280,15 @@ describe('a structured chat coordinates through the same verbs as a terminal', (
     })
   })
 
-  it('reads a coordinator actor left beside another handle as stale: the handle wins', async () => {
+  it('stops counting a coordinator actor once an older binary rebinds the Run to a terminal', async () => {
     const runId = await runCreate(SESSION_X)
-    // An older binary rebinding the Run to a terminal rewrites handle and pane, never the actor.
+    // An older binary's bindRun rewrites handle and pane and bumps the generation, never the actor.
     h.db.db
-      .prepare('UPDATE runs SET coordinator_handle = ?, coordinator_pane_key = ? WHERE id = ?')
+      .prepare(
+        `UPDATE runs SET coordinator_handle = ?, coordinator_pane_key = ?,
+           consumer_generation = consumer_generation + 1
+         WHERE id = ?`
+      )
       .run(WORKER_HANDLE, WORKER_PANE, runId)
 
     expect(await as(SESSION_X, 'orchestration.runCurrent', {})).toMatchObject({ run: null })
@@ -450,6 +454,26 @@ describe('a structured worker that names itself by session id', () => {
       )
     )
     expect(namedByHandle).toEqual(bySession)
+  })
+
+  it.each([
+    ['its handle', handle],
+    ['its session address', ACTOR_Y],
+    ['its bare session id', workerSession]
+  ])('accepts itself declared as %s and binds by its handle', async (_label, declared) => {
+    const { run } = resultOf(
+      await h.dispatch(
+        orchestrationRequest(
+          'orchestration.runCreate',
+          { objective: 'declared', from: declared },
+          { sessionId: workerSession }
+        )
+      )
+    )
+    expect(h.db.getRunRaw(idOf(run))).toMatchObject({
+      coordinator_handle: handle,
+      coordinator_actor: ACTOR_Y
+    })
   })
 
   it('coordinates with its handle, pane and actor, reachable at both addresses', async () => {

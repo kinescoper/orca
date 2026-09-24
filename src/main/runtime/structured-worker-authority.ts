@@ -8,6 +8,7 @@
  */
 
 import type { AgentSessionRecord } from '../../shared/agent-session-record'
+import { formatOrchestrationActor } from '../../shared/orchestration-actor'
 import type { RuntimeTerminalState } from '../../shared/runtime-types'
 import { getStructuredAgentSessionHost } from '../native-chat/agent-session-wire/structured-agent-session-registry'
 import type { OrchestrationDb } from './orchestration/db'
@@ -61,6 +62,24 @@ export function resolveStructuredWorkerIdentityForSession(
     structuredWorkerProcessIncarnation(sessionId)
   )
   return row ? structuredWorkerIdentities.rehydrate(row) : null
+}
+
+/**
+ * Whether this session was assigned a Dispatch as a structured worker. Such a session acts with its
+ * worker handle, so one whose handle is gone must not act handle-less, as a chat would.
+ */
+export function isRecordedStructuredWorkerSession(sessionId: string, db: OrchestrationDb): boolean {
+  return Boolean(
+    db.db
+      .prepare(
+        `SELECT 1 FROM dispatch_contexts
+         WHERE assignee_actor = ? AND process_incarnation = ? LIMIT 1`
+      )
+      .get(
+        formatOrchestrationActor({ kind: 'session', id: sessionId }),
+        structuredWorkerProcessIncarnation(sessionId)
+      )
+  )
 }
 
 /** Identity plus a record that still proves this runtime owns the session. */

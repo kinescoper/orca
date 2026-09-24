@@ -22,10 +22,15 @@ import {
 import { ORCHESTRATION_SESSION_CALLER_ERROR_CODES as CODES } from '../../../shared/orchestration-session-caller-codes'
 import { getStructuredAgentSessionHost } from '../../native-chat/agent-session-wire/structured-agent-session-registry'
 import type { OrcaRuntimeService } from '../orca-runtime'
-import type { OrchestrationSessionCaller } from '../orchestration/orchestration-caller-identity'
+import {
+  addressSpellingsOf,
+  type OrchestrationSessionCaller
+} from '../orchestration/orchestration-caller-identity'
 import { OrchestrationError } from '../orchestration/orchestration-error'
-import { isRecordedStructuredWorkerActor } from '../orchestration/db/schema/structured-worker-actor-backfill'
-import { resolveStructuredWorkerIdentityForSession } from '../structured-worker-authority'
+import {
+  isRecordedStructuredWorkerSession,
+  resolveStructuredWorkerIdentityForSession
+} from '../structured-worker-authority'
 import { structuredWorkerHostScope } from '../structured-worker-identity'
 import type { RpcRequest } from './core'
 
@@ -110,7 +115,7 @@ export async function resolveOrchestrationSessionCaller(
   assertSessionCanAct(sessionId, record)
   const db = runtime.getOrchestrationDb()
   const worker = resolveStructuredWorkerIdentityForSession(sessionId, db)
-  if (!worker && isRecordedStructuredWorkerActor(db.db, formatOrchestrationActor(actor))) {
+  if (!worker && isRecordedStructuredWorkerSession(sessionId, db)) {
     // Why: acting handle-less would split one worker into two identities, and bind like a chat.
     throw new OrchestrationError(
       CODES.notLive,
@@ -223,7 +228,7 @@ function bindDeclaredCaller(
   }
   const values: Record<string, unknown> = { ...params }
   const declared = values[name]
-  const names: unknown[] = [caller.address, caller.actor, caller.sessionId, caller.terminalHandle]
+  const names: unknown[] = [...addressSpellingsOf(caller), caller.sessionId]
   if (declared !== undefined && !names.includes(declared)) {
     throw consumerFenced(caller, String(declared))
   }

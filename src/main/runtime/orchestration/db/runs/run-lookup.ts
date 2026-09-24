@@ -1,6 +1,8 @@
 import type { RunRow } from '../../types'
 import {
+  addressSpellingsOf,
   runBoundToCoordinator,
+  runCoordinatorKey,
   type OrchestrationCoordinatorKey
 } from '../../orchestration-caller-identity'
 import { ORCHESTRATION_RUN_PAGE_LIMIT } from '../../../../../shared/orchestration-run-pagination'
@@ -162,10 +164,8 @@ export function unbindOtherRunsForCoordinator(
 ): void {
   for (const run of this.runsBoundToCoordinator(caller)) {
     if (run.id !== exceptRunId) {
-      for (const address of new Set([run.coordinator_handle, run.coordinator_actor])) {
-        if (address) {
-          this.routeAllUnreadDirectMessagesToRunMailbox(run.id, address)
-        }
+      for (const address of addressSpellingsOf(runCoordinatorKey(run))) {
+        this.routeAllUnreadDirectMessagesToRunMailbox(run.id, address)
       }
       this.db
         .prepare(

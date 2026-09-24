@@ -10,6 +10,7 @@ const CHAT_X = 'session:1b6f0c3a-7d2e-4a91-8c55-2e9d4b7a0f13'
 const CHAT_Y = 'session:6d2a9e41-0c7b-4f38-9a15-b3e8c1d57f20'
 const WORKER_SESSION = '9c3e5a17-4b2d-4f60-8e91-0d7a6c2b5e48'
 const WORKER_ACTOR = `session:${WORKER_SESSION}`
+const OTHER_WORKER_SESSION = '2e8b4d61-5a3c-4e97-b0f2-7c1d9a6e3b54'
 const PTY_PANE = 'tab_pty:11111111-1111-4111-8111-111111111111'
 const OTHER_PANE = 'tab_other:22222222-2222-4222-8222-222222222222'
 const UNCAPPED = Number.MAX_SAFE_INTEGER
@@ -38,12 +39,40 @@ describe('Run binding by orchestration actor', () => {
     return db.insertMessage({ from: 'term_sender', to, subject, body: '', runId })
   }
 
-  function structuredWorker() {
+  function structuredWorker(sessionId = WORKER_SESSION) {
     return {
       terminalHandle: mintStructuredWorkerHandle(),
-      paneKey: mintStructuredWorkerPaneKey(WORKER_SESSION),
-      actor: WORKER_ACTOR
+      paneKey: mintStructuredWorkerPaneKey(sessionId),
+      actor: `session:${sessionId}`
     }
+  }
+
+  // A binary without the actor column: its bindRun and unbindOtherRunsForPane statements.
+  function olderBinaryRebind(runId: string, handle: string, paneKey: string) {
+    db.db
+      .prepare(
+        `UPDATE runs SET coordinator_handle = ?, coordinator_pane_key = ?,
+           consumer_generation = consumer_generation + 1, updated_at = datetime('now')
+         WHERE id = ?`
+      )
+      .run(handle, paneKey, runId)
+  }
+
+  function olderBinaryUnbind(runId: string) {
+    db.db
+      .prepare(
+        `UPDATE runs SET coordinator_handle = NULL, coordinator_pane_key = NULL,
+           consumer_generation = consumer_generation + 1, updated_at = datetime('now')
+         WHERE id = ?`
+      )
+      .run(runId)
+  }
+
+  /** Unread mail addressed straight to `to`, as a row written before the address was cached. */
+  function strayMail(runId: string, to: string) {
+    const message = directMail(runId, 'term_late', `to ${to}`)
+    db.db.prepare('UPDATE messages SET to_handle = ? WHERE id = ?').run(to, message.id)
+    return message.id
   }
 
   it('binds a handle-less session by its actor and remembers the actor as its address', () => {
@@ -96,13 +125,10 @@ describe('Run binding by orchestration actor', () => {
     expect(db.getMessageById(pending.id)?.to_handle).toBe(`run:${xFirst.id}`)
   })
 
-  it('reads an actor beside a handle it does not bind with as stale, and the handle wins', () => {
+  it('stops counting an actor once a binary without the column rebinds the Run to a terminal', () => {
     db = new OrchestrationDb(':memory:')
     const run = createChatRun(CHAT_X)
-    // What a binary without the actor column leaves when it rebinds the Run to a terminal.
-    db.db
-      .prepare('UPDATE runs SET coordinator_handle = ?, coordinator_pane_key = ? WHERE id = ?')
-      .run('term_taker', PTY_PANE, run.id)
+    olderBinaryRebind(run.id, 'term_taker', PTY_PANE)
 
     expect(db.getCurrentRunForCoordinator(chat(CHAT_X))).toBeUndefined()
     expect(
@@ -116,7 +142,24 @@ describe('Run binding by orchestration actor', () => {
     expect(db.getRunRaw(run.id)?.coordinator_handle).toBe('term_taker')
   })
 
-  it("reads a structured worker's actor as stale once its handle is gone from the Run", () => {
+  it('does not hand a chat back a Run an older binary rebound and then unbound', () => {
+    db = new OrchestrationDb(':memory:')
+    const run = createChatRun(CHAT_X)
+    olderBinaryRebind(run.id, 'term_taker', PTY_PANE)
+    olderBinaryUnbind(run.id)
+
+    // Handle and pane are gone and the actor is still there: the shape of a live chat binding.
+    expect(db.getRunRaw(run.id)).toMatchObject({
+      coordinator_handle: null,
+      coordinator_pane_key: null,
+      coordinator_actor: CHAT_X
+    })
+    expect(db.getCurrentRunForCoordinator(chat(CHAT_X))).toBeUndefined()
+    const next = createChatRun(CHAT_X, 'next')
+    expect(db.getCurrentRunForCoordinator(chat(CHAT_X))?.id).toBe(next.id)
+  })
+
+  it("stops counting a structured worker's actor once an older binary unbinds its Run", () => {
     db = new OrchestrationDb(':memory:')
     const worker = structuredWorker()
     const run = db.createRun({
@@ -126,13 +169,9 @@ describe('Run binding by orchestration actor', () => {
       coordinatorActor: worker.actor
     })
     expect(db.getCurrentRunForCoordinator(worker)?.id).toBe(run.id)
-    // An older binary's pane unbind clears handle and pane but not the actor.
-    db.db
-      .prepare(
-        'UPDATE runs SET coordinator_handle = NULL, coordinator_pane_key = NULL WHERE id = ?'
-      )
-      .run(run.id)
+    olderBinaryUnbind(run.id)
     expect(db.getCurrentRunForCoordinator(worker)).toBeUndefined()
+    expect(db.getCurrentRunForCoordinator(chat(worker.actor))).toBeUndefined()
   })
 
   it('remembers a coordinating structured worker at its handle and its session address', () => {
@@ -195,6 +234,56 @@ describe('Run binding by orchestration actor', () => {
       coordinator_actor: WORKER_ACTOR,
       consumer_generation: before
     })
+    // Written at the current generation, so the filled actor counts on its own.
+    expect(db.getCurrentRunForCoordinator(chat(WORKER_ACTOR))?.id).toBe(run.id)
+  })
+
+  it("reroutes and remembers both of each worker's addresses when one takes a Run from another", () => {
+    db = new OrchestrationDb(':memory:')
+    const first = structuredWorker()
+    const second = structuredWorker(OTHER_WORKER_SESSION)
+    const run = db.createRun({
+      objective: 'first worker coordinates',
+      coordinatorHandle: first.terminalHandle,
+      coordinatorPaneKey: first.paneKey,
+      coordinatorActor: first.actor
+    })
+    const addresses = [first.terminalHandle, first.actor, second.terminalHandle, second.actor]
+    const stray = addresses.map((address) => strayMail(run.id, address))
+
+    db.bindRun({
+      runId: run.id,
+      coordinatorHandle: second.terminalHandle,
+      coordinatorPaneKey: second.paneKey,
+      coordinatorActor: second.actor
+    })
+
+    for (const id of stray) {
+      expect(db.getMessageById(id)?.to_handle).toBe(`run:${run.id}`)
+    }
+    for (const address of addresses) {
+      expect(db.getRunMailboxOwnerIdsForHandle(address)).toEqual([run.id])
+    }
+  })
+
+  it("reroutes both of a worker's addresses when its next Run unbinds the last", () => {
+    db = new OrchestrationDb(':memory:')
+    const worker = structuredWorker()
+    const bind = {
+      coordinatorHandle: worker.terminalHandle,
+      coordinatorPaneKey: worker.paneKey,
+      coordinatorActor: worker.actor
+    }
+    const last = db.createRun({ objective: 'last', ...bind })
+    const stray = [worker.terminalHandle, worker.actor].map((address) =>
+      strayMail(last.id, address)
+    )
+
+    db.createRun({ objective: 'next', ...bind })
+
+    for (const id of stray) {
+      expect(db.getMessageById(id)?.to_handle).toBe(`run:${last.id}`)
+    }
   })
 })
 

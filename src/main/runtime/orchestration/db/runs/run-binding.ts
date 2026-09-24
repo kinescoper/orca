@@ -3,7 +3,11 @@ import { OrchestrationError } from '../../orchestration-error'
 import { LEGACY_CONTRACT_VERSION } from '../contract-constants'
 import { isEquivalentPaneKey } from '../pane-key-match'
 import type { OrchestrationDb } from '../orchestration-db'
-import { runBoundToCoordinator } from '../../orchestration-caller-identity'
+import {
+  addressSpellingsOf,
+  runBoundToCoordinator,
+  runCoordinatorKey
+} from '../../orchestration-caller-identity'
 
 export function bindRun(
   this: OrchestrationDb,
@@ -117,15 +121,11 @@ export function bindRun(
       )
     }
     this.unbindOtherRunsForCoordinator(coordinator, params.runId)
-    // Both coordinators' addresses, and a structured worker's session address beside its handle.
-    for (const address of new Set(
-      [
-        run.coordinator_handle,
-        run.coordinator_actor,
-        coordinator.terminalHandle,
-        coordinator.actor
-      ].filter((value): value is string => Boolean(value))
-    )) {
+    // Every address of the coordinator being replaced and of the one binding now.
+    for (const address of new Set([
+      ...addressSpellingsOf(runCoordinatorKey(run)),
+      ...addressSpellingsOf(coordinator)
+    ])) {
       this.rememberRunCoordinatorHandle(params.runId, address)
       this.routeAllUnreadDirectMessagesToRunMailbox(params.runId, address)
     }
@@ -159,10 +159,13 @@ export function bindRun(
       if (params.takeoverLegacy || replacesLegacyCoordinator) {
         this.promoteLegacyCoordinatorMailForTakeover(params.runId, retainedCoordinatorHandle)
       }
-    } else if (run.coordinator_actor !== coordinator.actor) {
+    } else if (runCoordinatorKey(run).actor !== coordinator.actor) {
       // Same coordinator, so no new consumer: correct an actor a writer without the column left.
       this.db
-        .prepare('UPDATE runs SET coordinator_actor = ? WHERE id = ?')
+        .prepare(
+          `UPDATE runs SET coordinator_actor = ?, coordinator_actor_generation = consumer_generation
+           WHERE id = ?`
+        )
         .run(coordinator.actor, params.runId)
     }
     this.db.exec('COMMIT')
