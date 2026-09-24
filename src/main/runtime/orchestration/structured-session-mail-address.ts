@@ -124,14 +124,14 @@ export function sessionOrchestrationIdentity(
 
 /**
  * How an agent is shown a mailbox address. A structured worker's handle is only its mailbox key: it
- * reads as `session:<id>`, the one address that worker is taught, and routes back to that mailbox.
+ * reads as its session's actor, the one address that worker is taught, which routes back to it.
  */
 export function agentVisibleOrchestrationAddress(
   address: string,
   db: OrchestrationDb | null | undefined
 ): string {
   const worker = resolveStructuredWorkerIdentity(address, db)
-  return worker ? formatOrchestrationActor({ kind: 'session', id: worker.sessionId }) : address
+  return worker ? sessionOrchestrationIdentity(worker.sessionId, db).actor : address
 }
 
 export function withAgentVisibleAddresses(
