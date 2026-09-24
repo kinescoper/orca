@@ -11,6 +11,7 @@ import {
   taskNotStartableError
 } from '../../../../orchestration/task-dispatch-refusal'
 import { resolveRunScope } from './run-scope'
+import { agentVisibleOrchestrationAddress } from '../../../../orchestration/structured-session-mail-address'
 import { DispatchParams, DispatchShowParams } from '../schemas'
 
 export const ORCHESTRATION_DISPATCH_METHODS = [
@@ -60,7 +61,7 @@ export const ORCHESTRATION_DISPATCH_METHODS = [
           dispatchId: 'ctx_dryrun',
           canDispatchSubWorkers: previewDepth < maxDepth,
           taskSpec: task.spec,
-          coordinatorHandle: params.from ?? 'coordinator',
+          coordinatorHandle: agentVisibleOrchestrationAddress(params.from ?? 'coordinator', db),
           workerHandle: params.to ?? 'worker',
           devMode: params.devMode,
           ...(params.to
@@ -150,7 +151,7 @@ export const ORCHESTRATION_DISPATCH_METHODS = [
         dispatchId: ctx.id,
         canDispatchSubWorkers: ctx.depth < runtime.getNestedWorkerMaxDepth(),
         taskSpec: task.spec,
-        coordinatorHandle: params.from ?? 'coordinator',
+        coordinatorHandle: agentVisibleOrchestrationAddress(params.from ?? 'coordinator', db),
         workerHandle: to,
         dispatchCapability,
         devMode: params.devMode,
@@ -209,7 +210,7 @@ export const ORCHESTRATION_DISPATCH_METHODS = [
           dispatchId: ctx?.id ?? 'ctx_preview',
           canDispatchSubWorkers: (ctx?.depth ?? 1) < runtime.getNestedWorkerMaxDepth(),
           taskSpec: task.spec,
-          coordinatorHandle: params.from ?? 'coordinator',
+          coordinatorHandle: agentVisibleOrchestrationAddress(params.from ?? 'coordinator', db),
           workerHandle,
           devMode: params.devMode,
           ...(ctx ? { cliCommand: runtime.getTerminalOrchestrationCliCommand(workerHandle) } : {})

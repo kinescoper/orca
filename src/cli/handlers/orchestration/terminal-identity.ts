@@ -211,8 +211,8 @@ function namesInjectedSession(value: string, sessionId: string): boolean {
 }
 
 /**
- * The address the host gives this session: a structured worker keeps the handle it was minted, any
- * other session is `session:<id>`. Only for text that must match what the host writes.
+ * The mailbox key the host binds this session to: a structured worker keeps the handle it was
+ * minted, any other session is `session:<id>`. Never shown to the agent as its address.
  */
 export function injectedSessionAddress(): string | undefined {
   const sessionId = readInjectedAgentSessionId()
@@ -223,9 +223,10 @@ export function injectedSessionAddress(): string | undefined {
   return isStructuredWorkerHandle(ownHandle) ? ownHandle : `session:${sessionId}`
 }
 
-/** How check output names its caller: the handle, or the session's address. */
+/** How check output names its caller: the handle, or `session:<id>`, a structured worker's too. */
 export function orchestrationCallerLabel(handle: string | undefined): string {
-  return handle ?? injectedSessionAddress() ?? 'unknown'
+  const sessionId = readInjectedAgentSessionId()
+  return handle ?? (sessionId ? `session:${sessionId}` : 'unknown')
 }
 
 export async function resolveCoordinatorTerminalHandle(
