@@ -205,7 +205,8 @@ function assertSessionCanAct(sessionId: string, record: AgentSessionRecord): voi
   const { lease } = record
   const reason =
     lease.claimStatus === 'released'
-      ? 'has ended, so it can no longer act in orchestration.'
+      ? // Why not "ended": a released lease is evicted and wakeable; only a running process may act.
+        'is not running right now. A new message or user turn revives it; retry then.'
       : lease.handoffStage !== null
         ? 'is switching between chat and terminal view. Retry when the switch finishes.'
         : 'has no live owner on this host right now. Retry once it is running.'

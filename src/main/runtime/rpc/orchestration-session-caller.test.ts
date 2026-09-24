@@ -262,7 +262,7 @@ describe('orchestration session callers at the dispatch entry', () => {
 
     it('a released lease', async () => {
       h.records.set(SESSION_X, sessionRecord(SESSION_X, { lease: { claimStatus: 'released' } }))
-      await expectRefusedWithNoEffects(SESSION_X, CODES.notLive, /has ended/)
+      await expectRefusedWithNoEffects(SESSION_X, CODES.notLive, /is not running right now/)
     })
 
     it('a lease mid-handoff between chat and terminal view', async () => {
