@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import type { TuiAgent } from '../../shared/tui-agent'
 import { createTranscriptPane, TRANSCRIPT_PANE_PTY_ID } from './agent-transcript-pane-test-harness'
 
 const ready = readFileSync(
@@ -22,6 +23,37 @@ async function pane(data: string, connectionId?: string) {
 }
 
 describe('Kimi sessionless startup readiness', () => {
+  it.each<TuiAgent>(['codex', 'claude'])(
+    'does not settle a working %s pane displaying the Kimi capture',
+    async (agent) => {
+      const { runtime, handle } = await createTranscriptPane({
+        paneTitle: agent,
+        foregroundProcess: agent,
+        launchAgent: agent,
+        data: ready
+      })
+      runtime.onPtyData(
+        TRANSCRIPT_PANE_PTY_ID,
+        `${String.fromCharCode(27)}]9999;${JSON.stringify({ state: 'working', agentType: agent })}${String.fromCharCode(7)}`,
+        Date.now()
+      )
+      await expect(
+        runtime.waitForTerminal(handle, { condition: 'tui-idle', timeoutMs: 100 })
+      ).rejects.toThrow('timeout')
+    }
+  )
+
+  it('recognizes sessionless startup before pane agent identity is known', async () => {
+    const { runtime, handle } = await createTranscriptPane({
+      paneTitle: 'Terminal',
+      foregroundProcess: null,
+      data: ready
+    })
+    await expect(
+      runtime.waitForTerminal(handle, { condition: 'tui-idle', timeoutMs: 100 })
+    ).resolves.toMatchObject({ satisfied: true })
+  })
+
   it('settles a wait registered before the startup frame arrives', async () => {
     const { runtime, handle } = await pane('')
     const result = runtime.waitForTerminal(handle, { condition: 'tui-idle', timeoutMs: 5000 })

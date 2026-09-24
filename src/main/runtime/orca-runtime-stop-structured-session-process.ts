@@ -78,7 +78,7 @@ export class OrcaRuntimeWithStopStructuredSessionProcess extends OrcaRuntimeWith
     if (pty?.connected) {
       const text = buildTerminalWaitText(pty.tailBuffer, pty.tailPartialLine, pty.preview)
       const blocked = detectTerminalWaitBlockedReason(text) !== null
-      if (!blocked && isKnownReadyPromptPreview(text)) {
+      if (!blocked && isKnownReadyPromptPreview(text, this.getPaneAgentForTuiIdle(pty.ptyId))) {
         return 'idle'
       }
       return hasStructuredTuiIdleEvidence({

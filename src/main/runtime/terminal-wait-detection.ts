@@ -4,6 +4,7 @@ import {
   isOpenCodeNativeTitle,
   type AgentStatus
 } from '../../shared/agent-detection'
+import type { TuiAgent } from '../../shared/tui-agent'
 import type { RuntimeTerminalWaitBlockedReason } from '../../shared/runtime-types'
 import { findAntigravityReadyPromptIndex } from './antigravity-terminal-readiness'
 import { findKimiSessionlessReadyPromptIndex } from './kimi-terminal-readiness'
@@ -42,9 +43,10 @@ function computeExplicitIdleStatusFromTitle(title: string): AgentStatus | null {
 export const detectExplicitIdleStatusFromTitle: (title: string) => AgentStatus | null =
   memoizeTitleClassification(computeExplicitIdleStatusFromTitle)
 
-export function isKnownReadyPromptPreview(preview: string): boolean {
+/** Known pane identity prevents quoted Kimi startup output from proving readiness. */
+export function isKnownReadyPromptPreview(preview: string, agent?: TuiAgent | null): boolean {
   const normalized = preview.toLowerCase()
-  const readyIndex = findKnownReadyPromptIndex(normalized)
+  const readyIndex = findKnownReadyPromptIndex(normalized, agent)
   if (readyIndex === null) {
     return false
   }
@@ -99,9 +101,9 @@ function findDismissedStartupModalIndex(normalized: string): number | null {
   return indexes.length > 0 ? Math.max(...indexes) : null
 }
 
-function findKnownReadyPromptIndex(normalized: string): number | null {
+function findKnownReadyPromptIndex(normalized: string, agent?: TuiAgent | null): number | null {
   const indexes = [
-    findKimiSessionlessReadyPromptIndex(normalized),
+    agent == null || agent === 'kimi' ? findKimiSessionlessReadyPromptIndex(normalized) : null,
     findCodexReadyPromptIndex(normalized),
     findAntigravityReadyPromptIndex(normalized),
     findCursorReadyPromptIndex(normalized)

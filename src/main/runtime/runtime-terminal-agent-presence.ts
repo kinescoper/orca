@@ -77,7 +77,10 @@ export class RuntimeTerminalAgentPresence {
       }
       const markerTitle = paneTitle ?? tabTitle
       const waitText = buildTerminalWaitText(leaf.tailBuffer, leaf.tailPartialLine, leaf.preview)
-      if (!isOpenCodeNativeTitle(markerTitle) && isKnownReadyPromptPreview(waitText)) {
+      if (
+        !isOpenCodeNativeTitle(markerTitle) &&
+        isKnownReadyPromptPreview(waitText, trackedPty?.launchAgent ?? trackedPty?.foregroundAgent)
+      ) {
         return true
       }
       if (leaf.lastAgentStatus !== null && paneTitle === null && tabTitle === null) {
@@ -138,7 +141,10 @@ export class RuntimeTerminalAgentPresence {
       return true
     }
     const waitText = buildTerminalWaitText(pty.tailBuffer, pty.tailPartialLine, pty.preview)
-    if (!isOpenCodeNativeTitle(markerTitle) && isKnownReadyPromptPreview(waitText)) {
+    if (
+      !isOpenCodeNativeTitle(markerTitle) &&
+      isKnownReadyPromptPreview(waitText, pty.launchAgent ?? pty.foregroundAgent)
+    ) {
       return true
     }
     if (

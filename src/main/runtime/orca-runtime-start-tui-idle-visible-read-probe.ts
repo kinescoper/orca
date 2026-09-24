@@ -80,7 +80,7 @@ export class OrcaRuntimeWithStartTuiIdleVisibleReadProbe extends OrcaRuntimeWith
         const ready =
           agent === 'antigravity'
             ? isAntigravityReadyPromptSnapshot(snapshotText)
-            : isKnownReadyPromptPreview(snapshotText)
+            : isKnownReadyPromptPreview(snapshotText, agent)
         if (!blockedReason && !ready) {
           return
         }
