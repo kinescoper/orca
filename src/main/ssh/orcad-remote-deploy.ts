@@ -6,15 +6,8 @@
 import type { SshConnection } from './ssh-connection'
 import { execCommand } from './ssh-relay-deploy-helpers'
 import { ORCAD_INSTALL_MODEL } from './remote-install-model'
-import { acquireInstallLock } from './ssh-relay-install-lock'
-import { uploadRelayDirectory, writeRelayFile } from './ssh-relay-install-transfers'
-import {
-  abandonInstall,
-  computeRemoteInstallDir,
-  finalizeInstall,
-  isRemoteInstallComplete,
-  readLocalFullVersion
-} from './ssh-relay-versioned-install'
+import { writeRelayFile } from './ssh-relay-install-transfers'
+import { computeRemoteInstallDir, readLocalFullVersion } from './ssh-relay-versioned-install'
 import { RELAY_REMOTE_DIR } from './relay-protocol'
 import {
   ORCAD_STATE_SNAPSHOT_DIR,
@@ -45,13 +38,18 @@ import {
 } from './orcad-remote-process-control'
 import { joinRemotePath, type RemoteHostPlatform } from './ssh-remote-platform'
 import { computeLocalOrcadBuildHash } from './orcad-local-build-hash'
+import { preflightInstalledOrcad } from './orcad-remote-preflight'
+import { assertPosixOrcadHost } from './orcad-remote-host-support'
+import { installOrcadBundle } from './orcad-remote-install'
+import { materializeOrcadArtifact } from './orcad-artifact-materializer'
+import { resolveOrcadDeploymentTarget } from './orcad-deployment-target'
 
 export type OrcadDeployOptions = {
   conn: SshConnection
   host: RemoteHostPlatform
   remoteHome: string
-  /** Local `out/orcad`, containing the artifacts and the `.version` marker. */
-  localOrcadDir: string
+  /** An already assembled bundle; otherwise materialize the packaged template for this host. */
+  localOrcadDir?: string
   nodePath: string
   userDataDir: string
   bindHost: string
@@ -91,47 +89,6 @@ function exec(
 
 function baseDir(options: OrcadDeployOptions): string {
   return joinRemotePath(options.host, options.remoteHome, RELAY_REMOTE_DIR)
-}
-
-/** Install the bytes under `orcad-<version>/`, using the relay's install transaction. */
-async function installOrcadBundle(
-  options: OrcadDeployOptions,
-  fullVersion: string,
-  remoteDir: string
-): Promise<void> {
-  if (
-    await isRemoteInstallComplete(options.conn, ORCAD_INSTALL_MODEL, remoteDir, options.host, {
-      signal: options.signal
-    })
-  ) {
-    return
-  }
-  await acquireInstallLock(options.conn, remoteDir, options.host, { signal: options.signal })
-  try {
-    // Re-probe under the lock: a sibling deploy may have finished while we waited.
-    if (
-      await isRemoteInstallComplete(options.conn, ORCAD_INSTALL_MODEL, remoteDir, options.host, {
-        signal: options.signal
-      })
-    ) {
-      return
-    }
-    await uploadRelayDirectory(options.conn, options.localOrcadDir, remoteDir, options.host, {
-      signal: options.signal
-    })
-    await writeRelayFile(
-      options.conn,
-      options.host,
-      joinRemotePath(options.host, remoteDir, ORCAD_INSTALL_MODEL.versionFilename),
-      fullVersion,
-      { signal: options.signal }
-    )
-    await finalizeInstall(options.conn, remoteDir, options.host, { signal: options.signal })
-  } catch (error) {
-    // Leave a recoverable partial rather than a dir that probes complete.
-    await abandonInstall(options.conn, remoteDir, options.host)
-    throw error
-  }
 }
 
 async function captureSnapshot(
@@ -245,7 +202,16 @@ async function restoreIncumbent(
 }
 
 /** Activate on a healthy verdict; retain changed candidate state for explicit recovery. */
-export async function deployOrcad(options: OrcadDeployOptions): Promise<OrcadDeployResult> {
+export async function deployOrcad(input: OrcadDeployOptions): Promise<OrcadDeployResult> {
+  assertPosixOrcadHost(input.host)
+  const options = {
+    ...input,
+    localOrcadDir:
+      input.localOrcadDir ??
+      (await materializeOrcadArtifact(await resolveOrcadDeploymentTarget(input), {
+        signal: input.signal
+      }))
+  }
   const now = options.now ?? ((): Date => new Date())
   const fullVersion = readLocalFullVersion(options.localOrcadDir)
   const remoteDir = computeRemoteInstallDir(ORCAD_INSTALL_MODEL, options.remoteHome, fullVersion)
@@ -268,6 +234,24 @@ export async function deployOrcad(options: OrcadDeployOptions): Promise<OrcadDep
       fullVersion,
       code: plan.code,
       reason: plan.reason
+    }
+  }
+
+  try {
+    await preflightInstalledOrcad({
+      ...options,
+      remoteInstallDir: remoteDir,
+      fullVersion
+    })
+  } catch (error) {
+    options.signal?.throwIfAborted()
+    return {
+      outcome: 'installed-not-activated',
+      fullVersion,
+      code: 'orcad_candidate_preflight_failed',
+      reason: `Candidate profile preflight failed; the incumbent was not stopped: ${
+        error instanceof Error ? error.message : String(error)
+      }`
     }
   }
 

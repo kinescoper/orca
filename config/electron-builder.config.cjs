@@ -12,6 +12,8 @@ const {
   prunePackagedRuntimeNodeModules,
   verifyPackagedMainRuntimeDeps
 } = require('./packaged-runtime-node-modules.cjs')
+const { verifyPackagedOrcadTemplate } = require('./scripts/verify-packaged-orcad-template.cjs')
+const { signMacAppWithOrcadTemplate } = require('./scripts/sign-mac-orcad-template.cjs')
 const { verifyLinuxGlibcFloor } = require('./scripts/verify-linux-glibc-floor.cjs')
 const { writeMacBuildCompatibility } = require('./scripts/mac-build-compatibility.cjs')
 const {
@@ -105,6 +107,7 @@ const emojiShortcodeDatasetResource = {
 }
 const commonExtraResources = [
   relayExtraResource,
+  { from: 'out/orcad-template', to: 'orcad-template' },
   bundledPluginResources,
   skillFreshnessResources,
   emojiShortcodeDatasetResource
@@ -181,6 +184,9 @@ module.exports = {
     // Why: these repo-only inputs are either bundled into out/ or copied via
     // extraResources. Shipping them in app.asar bloats the desktop bundle.
     '!src{,/**/*}',
+    '!out/orcad{,/**/*}',
+    '!out/orcad-template{,/**/*}',
+    '!out/.orcad-*{,/**/*}',
     '!config{,/**/*}',
     '!docs{,/**/*}',
     '!mobile{,/**/*}',
@@ -314,6 +320,7 @@ module.exports = {
     if (!existsSync(resourcesDir)) {
       throw new Error(`Missing packaged resources directory: ${resourcesDir}`)
     }
+    verifyPackagedOrcadTemplate(resourcesDir)
     // FpmTarget replaces this with deb/rpm while building those artifacts from the shared app tree.
     if (context.electronPlatformName === 'linux') {
       writeFileSync(join(resourcesDir, 'package-type'), 'AppImage')
@@ -411,6 +418,18 @@ module.exports = {
       )
     }
   },
+  afterSign: (context) => {
+    if (context.electronPlatformName === 'darwin') {
+      verifyPackagedOrcadTemplate(
+        join(
+          context.appOutDir,
+          `${context.packager.appInfo.productFilename}.app`,
+          'Contents',
+          'Resources'
+        )
+      )
+    }
+  },
   win: {
     executableName: 'Orca',
     // Why: Windows installers are signed after electron-builder packaging by
@@ -471,6 +490,7 @@ module.exports = {
     include: resolve(__dirname, 'nsis', 'orca-installer-hooks.nsh')
   },
   mac: {
+    sign: (options) => signMacAppWithOrcadTemplate(options),
     // Why rank Alternate: Orca joins Finder's "Open With" list for Markdown without claiming
     // LSHandlerRank ownership, so whichever editor the user already prefers stays the default.
     // Why one entry per extension: app-builder-lib globs `*.${ext}`, which an array would break.

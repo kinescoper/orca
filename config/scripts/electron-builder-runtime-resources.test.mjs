@@ -4,6 +4,7 @@ import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, join, relative, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { writeOrcadTemplateTestFixture } from './orcad-template-test-fixture.mjs'
 import { removeTree } from '../../src/shared/windows-transient-lock-removal.ts'
 
 const require = createRequire(import.meta.url)
@@ -411,6 +412,7 @@ describe('packaged runtime resources', () => {
           { recursive: true }
         )
 
+        await writeOrcadTemplateTestFixture(resourcesDir)
         const unpackedMainDir = join(resourcesDir, 'app.asar.unpacked', 'out', 'main')
         await mkdir(unpackedMainDir, { recursive: true })
         await writeFile(join(unpackedMainDir, 'daemon-entry.js'), '', 'utf8')
@@ -479,6 +481,7 @@ describe('packaged runtime resources', () => {
         await mkdir(join(resourcesDir, 'node_modules', 'zod', 'src'), { recursive: true })
         // Why: afterPack now fails hard when the unpacked daemon entry is
         // missing, so the fixture must carry one like a real package layout.
+        await writeOrcadTemplateTestFixture(resourcesDir)
         const unpackedMainDir = join(resourcesDir, 'app.asar.unpacked', 'out', 'main')
         await mkdir(unpackedMainDir, { recursive: true })
         await writeFile(
