@@ -1,5 +1,6 @@
 import { AgentSessionAcquisitionRootExitObservedError } from '../native-chat/agent-session-wire/structured-agent-session-adapter'
 import { settledClaudeTurnEndLeaf } from './claude-structured-resume-point'
+import type { ClaudeReleasedChildCleanup } from './claude-released-child-cleanup'
 import {
   claudeAcquisitionCleanupError,
   settleClaudeExitedSession
@@ -50,13 +51,15 @@ export async function persistClaudeSessionHandle(
 /**
  * Indexes a first-hand exit, then re-enters the provider's close ladder before publishing lifecycle
  * recovery. The lease follows the root, so an observed root exit publishes `ended` even while the
- * tree is unverifiable; only a descendant seen alive withholds it.
+ * tree is unverifiable. A descendant seen alive only defers it: the bounded cleanup re-runs the
+ * ladder and publishes on proof, or at give-up with the last verdict reported.
  */
 export function retainClaudeUnexpectedExit(input: {
   sessionId: string
   session: ClaudeSession
   error: Error
   exits: Map<string, ClaudeSessionExit>
+  cleanup: ClaudeReleasedChildCleanup
   settle: (exit: ClaudeSessionExit) => Promise<void>
 }): void {
   const closePromise = input.session.connection.close().catch(() => false)
@@ -76,9 +79,20 @@ export function retainClaudeUnexpectedExit(input: {
         claudeAcquisitionCleanupError(exit.connection, exit.error) instanceof
         AgentSessionAcquisitionRootExitObservedError
       ) {
-        exit.endedWithTreeUnproven = true
+        exit.ended = 'published'
         return input.settle(exit)
       }
+      const verdict = exit.connection.exitVerdict
+      if (verdict.root !== 'exited' || verdict.tree !== 'live') {
+        return undefined
+      }
+      exit.ended = 'withheld'
+      input.cleanup.adopt(input.sessionId, exit.connection, (treeProven) => {
+        if (!treeProven) {
+          exit.ended = 'published'
+        }
+        void input.settle(exit).catch(() => undefined)
+      })
       return undefined
     })
     .catch(() => undefined)
@@ -110,7 +124,7 @@ export function settleClaudeUnexpectedExit(input: {
       return
     }
     // Unproven descendants stay indexed as evidence until the host's release retires them.
-    if (!exit.endedWithTreeUnproven) {
+    if (exit.ended !== 'published') {
       exits.delete(sessionId)
     }
     try {

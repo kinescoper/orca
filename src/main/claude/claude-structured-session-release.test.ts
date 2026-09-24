@@ -4,7 +4,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   AgentSessionAcquisitionExitUnprovenError,
   AgentSessionAcquisitionRootExitObservedError
@@ -26,16 +26,18 @@ import {
 } from './claude-structured-session-test-support'
 
 const ROOT_EXITED_TREE_UNVERIFIABLE = { root: 'exited', tree: 'unverifiable' } as const
+const ROOT_EXITED_TREE_LIVE = { root: 'exited', tree: 'live' } as const
 
 async function acquiredWithCleanup(
   closeVerdict?: ClaudeStreamJsonConnection['exitVerdict'],
-  claudeConfigDir = '/accounts/claude'
+  claudeConfigDir = '/accounts/claude',
+  retryDelaysMs: readonly number[] = []
 ) {
   const claude = fakeClaude(closeVerdict ? { unprovenCloseVerdict: closeVerdict } : {})
   const events: ClaudeStructuredSessionEvent[] = []
   const unverified: ClaudeReleasedChildCleanupReport[] = []
   const cleanup = new ClaudeReleasedChildCleanup({
-    retryDelaysMs: [],
+    retryDelaysMs,
     report: (report) => unverified.push(report)
   })
   const adapter = new ClaudeStructuredSessionAdapter({
@@ -85,7 +87,11 @@ describe('Claude unexpected exit with an unverifiable tree', () => {
   })
 
   it('still withholds ended while a descendant was seen alive', async () => {
-    const { adapter, claude, events } = await acquiredWithCleanup({ root: 'exited', tree: 'live' })
+    const { adapter, claude, events } = await acquiredWithCleanup(
+      ROOT_EXITED_TREE_LIVE,
+      undefined,
+      [60_000]
+    )
 
     claude.connections[0]!.handlers.onExit?.(new Error('claude stream-json exited (code 1)'))
     await adapter.drainObservedExits()
@@ -127,6 +133,52 @@ describe('Claude unexpected exit with an unverifiable tree', () => {
     } finally {
       await rm(accountHome, { recursive: true, force: true })
     }
+  })
+})
+
+describe('Claude unexpected exit while a descendant was seen alive', () => {
+  it('publishes the withheld ended once a cleanup retry proves the tree gone', async () => {
+    const { adapter, claude, events, cleanup, unverified } = await acquiredWithCleanup(
+      ROOT_EXITED_TREE_LIVE,
+      undefined,
+      [1, 60_000]
+    )
+    const connection = claude.connections[0]!
+    connection.handlers.onExit?.(new Error('claude stream-json exited (code 1)'))
+    await adapter.drainObservedExits()
+    expect(endedEvents(events)).toEqual([])
+    expect(cleanup.size).toBe(1)
+
+    // The surviving descendant exits; the next scheduled ladder run can now prove the tree.
+    connection.exitVerdict = { root: 'exited', tree: 'exited' }
+    connection.close = async () => true
+
+    await vi.waitFor(() =>
+      expect(endedEvents(events)).toEqual([
+        expect.objectContaining({ cause: 'unexpected-exit', fence: 7 })
+      ])
+    )
+    expect(cleanup.size).toBe(0)
+    expect(unverified).toEqual([])
+    await expect(adapter.releaseAcquisition({ sessionId: 'session-1' })).resolves.toBe(true)
+  })
+
+  it('publishes at give-up and reports the descendant as live, never gone', async () => {
+    const { adapter, claude, events, unverified } = await acquiredWithCleanup(
+      ROOT_EXITED_TREE_LIVE,
+      undefined,
+      [1]
+    )
+    claude.connections[0]!.handlers.onExit?.(new Error('claude stream-json exited (code 1)'))
+
+    await vi.waitFor(() => expect(endedEvents(events)).toHaveLength(1))
+    expect(unverified).toEqual([
+      { sessionId: 'session-1', pid: 4321, verdict: ROOT_EXITED_TREE_LIVE }
+    ])
+    // The exit stays as evidence: cleanup still reports the descendant unproven.
+    await expect(adapter.releaseAcquisition({ sessionId: 'session-1' })).rejects.toBeInstanceOf(
+      AgentSessionAcquisitionExitUnprovenError
+    )
   })
 })
 

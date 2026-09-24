@@ -1,3 +1,4 @@
+import { isAgentSessionChildReleasedThroughFence } from '../native-chat/agent-session-wire/structured-agent-session-fence-retirement'
 import type { ClaudeReleasedChildCleanup } from './claude-released-child-cleanup'
 import { settleClaudeExitedSession } from './claude-structured-session-close'
 import type {
@@ -45,11 +46,8 @@ export function retireClaudeReleasedSession(
 }
 
 /**
- * Retires the indexed child only when its fence is at or below the one the host no longer grants to
- * it. Two facts deliver that: an acknowledged release names its fence, and an acquisition at fence
- * F means F-1 is gone. The lease grants a later fence either after a release or over an unreleased
- * lease whose owner probe proved the recorded process dead, so neither is evidence about THIS
- * connection: a root not yet seen to exit here still goes through the close ladder. A stale
+ * Retires the indexed child only once it is past its lease. Two facts deliver the released fence:
+ * an acknowledged release names it, and an acquisition at fence F means F-1 is gone. A stale
  * acknowledgement can never reach a child acquired at a newer fence.
  */
 export function retireClaudeSessionReleasedThrough(
@@ -58,8 +56,11 @@ export function retireClaudeSessionReleasedThrough(
   const indexed = input.sessions.get(input.sessionId) ?? input.exits.get(input.sessionId)?.session
   if (
     !indexed ||
-    indexed.fence > input.releasedFence ||
-    indexed.connection.exitVerdict.root === 'live'
+    !isAgentSessionChildReleasedThroughFence({
+      childFence: indexed.fence,
+      releasedFence: input.releasedFence,
+      rootSeenLive: indexed.connection.exitVerdict.root === 'live'
+    })
   ) {
     return undefined
   }

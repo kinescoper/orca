@@ -12,10 +12,14 @@ export type ClaudeReleasedChildCleanupReport = {
   verdict: ClaudeChildExitVerdict
 }
 
+/** Told once whether a retry proved the tree gone (`true`) or the schedule gave up (`false`). */
+export type ClaudeReleasedChildSettled = (treeProven: boolean) => void
+
 type PendingCleanup = {
   sessionId: string
   attempts: number
   timer: ReturnType<typeof setTimeout> | undefined
+  onSettled: ClaudeReleasedChildSettled | undefined
 }
 
 function reportUnverifiedChild(report: ClaudeReleasedChildCleanupReport): void {
@@ -51,11 +55,15 @@ export class ClaudeReleasedChildCleanup {
     return this.pending.size
   }
 
-  adopt(sessionId: string, connection: ClaudeStreamJsonConnection): void {
+  adopt(
+    sessionId: string,
+    connection: ClaudeStreamJsonConnection,
+    onSettled?: ClaudeReleasedChildSettled
+  ): void {
     if (this.pending.has(connection) || treeProven(connection.exitVerdict)) {
       return
     }
-    const entry: PendingCleanup = { sessionId, attempts: 0, timer: undefined }
+    const entry: PendingCleanup = { sessionId, attempts: 0, timer: undefined, onSettled }
     if (this.closed) {
       // Shutdown already ran its final pass; this child still gets exactly one.
       void this.finalAttempt(connection, entry)
@@ -83,6 +91,7 @@ export class ClaudeReleasedChildCleanup {
     if (delay === undefined) {
       this.pending.delete(connection)
       this.reportUnverified(connection, entry)
+      this.settle(entry, false)
       return
     }
     entry.timer = setTimeout(() => void this.attempt(connection, entry), delay)
@@ -101,6 +110,7 @@ export class ClaudeReleasedChildCleanup {
     }
     if (proven) {
       this.pending.delete(connection)
+      this.settle(entry, true)
       return
     }
     this.schedule(connection, entry)
@@ -110,8 +120,20 @@ export class ClaudeReleasedChildCleanup {
     connection: ClaudeStreamJsonConnection,
     entry: PendingCleanup
   ): Promise<void> {
-    if (!(await connection.close().catch(() => false))) {
+    const proven = await connection.close().catch(() => false)
+    if (!proven) {
       this.reportUnverified(connection, entry)
+    }
+    this.settle(entry, proven)
+  }
+
+  private settle(entry: PendingCleanup, treeProven: boolean): void {
+    const onSettled = entry.onSettled
+    entry.onSettled = undefined
+    try {
+      onSettled?.(treeProven)
+    } catch {
+      // The owner's settlement is its own; cleanup still ends here.
     }
   }
 

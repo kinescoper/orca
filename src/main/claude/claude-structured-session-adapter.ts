@@ -132,13 +132,14 @@ export class ClaudeStructuredSessionAdapter implements StructuredAgentSessionAda
       session,
       error,
       exits: this.exits,
+      cleanup: this.releasedChildren,
       settle: (exit) => this.settleUnexpectedExit(sessionId, exit)
     })
   }
 
   /** Resolves once every first-hand exit observed so far has published its
-   *  lifecycle event — or has seen a descendant alive and stayed indexed for a
-   *  retry. Publication trails observation by the close ladder and the
+   *  lifecycle event — or has seen a descendant alive and handed the withheld
+   *  `ended` to the bounded cleanup. Publication trails observation by the close ladder and the
    *  transcript cursor write, so nothing outside can otherwise tell the two
    *  apart without guessing at wall-clock. */
   drainObservedExits = (): Promise<void> => drainClaudeObservedExits(this.exits)
@@ -164,7 +165,7 @@ export class ClaudeStructuredSessionAdapter implements StructuredAgentSessionAda
       // An exit that already published `ended` has no turn left to run.
       hasLiveSession:
         this.sessions.has(input.identity.sessionId) ||
-        (exit !== undefined && exit.endedWithTreeUnproven !== true)
+        (exit !== undefined && exit.ended !== 'published')
     })
   }
 

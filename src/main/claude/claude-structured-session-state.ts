@@ -200,8 +200,10 @@ export type ClaudeSessionExit = {
   /** The whole ladder-then-settle tail, retained so a barrier can await an exit
    *  that is observed but not yet published. Never rejects. */
   publication?: Promise<void>
-  /** `ended` went out on the root's exit while the tree stayed unproven; kept only as evidence. */
-  endedWithTreeUnproven?: boolean
+  /** Where `ended` stands for this exit. `withheld`: a descendant was seen alive and the bounded
+   *  cleanup is re-checking. `published`: `ended` went out while the tree stayed unproven, so the
+   *  exit is kept only as evidence until a release retires it. A proven exit leaves the map. */
+  ended?: 'withheld' | 'published'
 }
 
 export type ClaudeAcquisitionAttempt = {

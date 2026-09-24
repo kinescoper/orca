@@ -66,6 +66,24 @@ describe('ClaudeReleasedChildCleanup', () => {
     expect(cleanup.size).toBe(0)
   })
 
+  it('tells its owner once whether a retry proved the tree or the schedule gave up', async () => {
+    const provenChild = await releasedChild([true])
+    const stuckChild = await releasedChild([])
+    const settled: [string, boolean][] = []
+    cleanup.adopt('session-1', provenChild.connection, (proven) => settled.push(['s1', proven]))
+    cleanup.adopt('session-2', stuckChild.connection, (proven) => settled.push(['s2', proven]))
+
+    await vi.advanceTimersByTimeAsync(10)
+    expect(settled).toEqual([['s1', true]])
+    await vi.advanceTimersByTimeAsync(20)
+
+    expect(settled).toEqual([
+      ['s1', true],
+      ['s2', false]
+    ])
+    expect(reports.map((report) => report.sessionId)).toEqual(['session-2'])
+  })
+
   it('never adopts a child whose tree is already proven', async () => {
     const { connection } = await releasedChild([], { root: 'exited', tree: 'exited' })
     cleanup.adopt('session-1', connection)
