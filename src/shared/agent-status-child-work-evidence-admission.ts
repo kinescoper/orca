@@ -102,7 +102,9 @@ export function agentChildWorkRunVerdict(
   return current === undefined ? 'current' : 'new'
 }
 
-/** `prior` is the record when this evidence continues its current run; a new run starts bare. */
+/** `prior` is the record when this evidence continues its current run; a new run starts bare.
+ *  Labels, tokens, owner and the last message are admission's to retain, so only this edge's
+ *  own facts go in. */
 function liveFields(
   ctx: AgentChildWorkEvidenceContext,
   child: AgentChildWorkLiveObservation,
@@ -114,12 +116,9 @@ function liveFields(
   const at = existing ? Math.max(observedAt, existing.observedAt) : observedAt
   const owner =
     child.ownerId === undefined ? undefined : resolveAgentChildWorkOwner(ctx, child.ownerId)
-  const parentChildWorkId = owner ?? existing?.parentChildWorkId
-  const name = childWorkLabel(child.name) ?? existing?.name
-  const description = childWorkLabel(child.description) ?? existing?.description
-  const agentType = childWorkLabel(child.agentType) ?? existing?.agentType
-  const totalTokens = child.totalTokens ?? existing?.totalTokens
-  const lastMessage = child.lastMessage ?? prior?.lastMessage
+  const name = childWorkLabel(child.name)
+  const description = childWorkLabel(child.description)
+  const agentType = childWorkLabel(child.agentType)
   const operation = nextOperation(child.operation, prior?.operation)
   return {
     kind: child.kind,
@@ -128,12 +127,11 @@ function liveFields(
     ...(name !== undefined ? { name } : {}),
     ...(description !== undefined ? { description } : {}),
     ...(agentType !== undefined ? { agentType } : {}),
-    ...(existing?.model !== undefined ? { model: existing.model } : {}),
-    ...(totalTokens !== undefined ? { totalTokens } : {}),
-    ...(parentChildWorkId !== undefined ? { parentChildWorkId } : {}),
+    ...(child.totalTokens !== undefined ? { totalTokens: child.totalTokens } : {}),
+    ...(owner !== undefined ? { parentChildWorkId: owner } : {}),
     residency: child.residency,
     ...(operation ? { operation } : {}),
-    ...(lastMessage !== undefined ? { lastMessage } : {}),
+    ...(child.lastMessage !== undefined ? { lastMessage: child.lastMessage } : {}),
     observedAt: at,
     stoppable: child.stoppable,
     provenance: STRUCTURED_CHILD_WORK_PROVENANCE
@@ -229,23 +227,14 @@ export function settleAgentChildWork(
     ctx.outcome.rejected.push({ handleId, reason: 'unbound-child' })
     return
   }
-  const totalTokens = reported.totalTokens ?? existing.totalTokens
-  const lastMessage = reported.lastMessage ?? existing.lastMessage
+  // Admission keeps what the record already knows; the ending adds only what it reported.
   const result = ctx.admission.announce({
     kind: existing.kind,
     state: 'done',
     membership: 'settled',
     outcome,
-    ...(existing.name !== undefined ? { name: existing.name } : {}),
-    ...(existing.description !== undefined ? { description: existing.description } : {}),
-    ...(existing.agentType !== undefined ? { agentType: existing.agentType } : {}),
-    ...(existing.model !== undefined ? { model: existing.model } : {}),
-    ...(totalTokens !== undefined ? { totalTokens } : {}),
-    ...(existing.parentChildWorkId !== undefined
-      ? { parentChildWorkId: existing.parentChildWorkId }
-      : {}),
-    ...(existing.residency !== undefined ? { residency: existing.residency } : {}),
-    ...(lastMessage !== undefined ? { lastMessage } : {}),
+    ...(reported.totalTokens !== undefined ? { totalTokens: reported.totalTokens } : {}),
+    ...(reported.lastMessage !== undefined ? { lastMessage: reported.lastMessage } : {}),
     observedAt: Math.max(observedAt, existing.observedAt),
     stoppable: false,
     provenance: STRUCTURED_CHILD_WORK_PROVENANCE,

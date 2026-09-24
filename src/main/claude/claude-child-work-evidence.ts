@@ -65,7 +65,6 @@ export function claudeTaskObservation(
   facts: ClaudeTaskFacts = {},
   observedAt = 0
 ): AgentChildWorkLiveObservation {
-  const totalTokens = facts.totalTokens ?? task.totalTokens
   const operation: AgentChildWorkOperation | undefined = facts.toolName
     ? { toolName: facts.toolName, basis: 'reported', observedAt }
     : undefined
@@ -78,7 +77,7 @@ export function claudeTaskObservation(
     // The published row names a task's type as both its name and its agent type.
     ...(task.name ? { name: task.name, agentType: task.name } : {}),
     ...(task.description ? { description: task.description } : {}),
-    ...(totalTokens !== undefined ? { totalTokens } : {}),
+    ...(facts.totalTokens !== undefined ? { totalTokens: facts.totalTokens } : {}),
     ...(operation ? { operation } : {}),
     ...(facts.lastMessage ? { lastMessage: facts.lastMessage } : {}),
     // Only a backgrounded task has a stop the host can target.
