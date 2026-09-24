@@ -528,9 +528,12 @@ describe('packaged runtime resources', () => {
   )
 })
 
+const BUN_RUNTIME_BUILTINS = new Set(['bun:ffi', 'bun:sqlite'])
+
 // Why source-anchored: the bundler renames a createRequire()'d require, so
 // verifyPackagedMainRuntimeDeps' `require("x")` scan cannot see these specifiers — packaging
 // stays green while the packaged app throws MODULE_NOT_FOUND the first time the path runs.
+
 function collectLazyRequireSpecifiers(directory, found = new Map()) {
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     const entryPath = join(directory, entry.name)
@@ -546,7 +549,7 @@ function collectLazyRequireSpecifiers(directory, found = new Map()) {
       continue
     }
     for (const match of source.matchAll(/\brequire[A-Za-z0-9_]*\(\s*'([^']+)'\s*\)/g)) {
-      if (isPackagedExternalSpecifier(match[1])) {
+      if (!BUN_RUNTIME_BUILTINS.has(match[1]) && isPackagedExternalSpecifier(match[1])) {
         found.set(match[1], relative(projectRoot, entryPath).replaceAll('\\', '/'))
       }
     }
@@ -563,6 +566,26 @@ function packagedResourceDestinations(platform) {
 }
 
 describe('lazily required packages reach Resources/node_modules', () => {
+  it('excludes Bun runtime builtins while retaining ordinary lazy dependencies', async () => {
+    const sourceDir = await mkdtemp(join(tmpdir(), 'orca-lazy-bun-builtins-'))
+    try {
+      await writeFile(
+        join(sourceDir, 'runtime.ts'),
+        [
+          'const requireFromMain = createRequire(import.meta.url)',
+          "requireFromMain('node:fs')",
+          "requireFromMain('bun:ffi')",
+          "requireFromMain('bun:sqlite')",
+          "requireFromMain('zod')",
+          "requireFromMain('bun-sqlite')"
+        ].join('\n')
+      )
+      expect([...collectLazyRequireSpecifiers(sourceDir).keys()]).toEqual(['zod', 'bun-sqlite'])
+    } finally {
+      await removeTree(sourceDir)
+    }
+  })
+
   it('copies every createRequire specifier main uses into the packaged resource plan', () => {
     const specifiers = collectLazyRequireSpecifiers(join(projectRoot, 'src', 'main'))
     expect(specifiers.size).toBeGreaterThan(0)

@@ -10,7 +10,6 @@ import { isWindowsGitBashShellPath } from '../git-bash'
 import { removeUnspecifiedPaneIdentityEnv } from './local-pty-launch-helpers'
 import type { LocalPtyLaunchPlan } from './local-pty-launch-plan'
 import type { LocalPtyProviderOptions } from './local-pty-provider-types'
-import { awaitCancelableLocalPtySpawn } from './local-pty-spawn-state'
 import type { PtySpawnOptions } from './types'
 
 export function buildLocalPtySpawnEnvironment(args: {
@@ -56,21 +55,16 @@ export function buildLocalPtySpawnEnvironment(args: {
   if (!getOptions().buildSpawnEnv) {
     return spawnEnv
   }
-  // Why (#16441): building the env now awaits Codex hook installs and trust
-  // grants, so shutdown must be able to cancel this session id here too.
-  return awaitCancelableLocalPtySpawn(
-    id,
-    getOptions().buildSpawnEnv!(id, spawnEnv, {
-      explicitEnv: spawn.env ?? {},
-      command: spawn.command,
-      launchAgent: spawn.launchAgent,
-      codexHomePathOverride: spawn.codexHomePathOverride,
-      cwd: plan.cwd,
-      shellPath: plan.shellPath,
-      isWsl: plan.isWslShell,
-      wslDistro: plan.launchWslDistro
-    })
-  )
+  return getOptions().buildSpawnEnv!(id, spawnEnv, {
+    explicitEnv: spawn.env ?? {},
+    command: spawn.command,
+    launchAgent: spawn.launchAgent,
+    codexHomePathOverride: spawn.codexHomePathOverride,
+    cwd: plan.cwd,
+    shellPath: plan.shellPath,
+    isWsl: plan.isWslShell,
+    wslDistro: plan.launchWslDistro
+  })
 }
 
 export function enforceLocalPtySpawnEnvironmentOverrides(
