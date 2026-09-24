@@ -160,7 +160,10 @@ export function runStructuredConversationCommand(
               agent: record.provider,
               runtimeKind: 'native',
               launchArgs: record.launchArgs,
-              options: effectiveOptions
+              options: effectiveOptions,
+              // The replacement shows in the same tab; the source declares it (below) so the
+              // reservation is admitted under an id the source still holds.
+              ...(record.surfaceTabId ? { surfaceTabId: record.surfaceTabId } : {})
             }
             attach.envelope.payloadFingerprint = computeAgentSessionPayloadFingerprint({
               method: 'agentSession.attach',

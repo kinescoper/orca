@@ -250,7 +250,12 @@ function assertSurfaceTabIdUnheld(
     throw new Error('agent_session_operation_invalid')
   }
   for (const record of state.records.values()) {
-    if (record.sessionId !== request.sessionId && record.surfaceTabId === request.surfaceTabId) {
+    if (
+      record.sessionId !== request.sessionId &&
+      record.surfaceTabId === request.surfaceTabId &&
+      // A cleared conversation hands its tab to the replacement it declared, and nothing else.
+      record.conversationCommand?.replacementSessionId !== request.sessionId
+    ) {
       throw new Error('agent_session_conflict')
     }
   }

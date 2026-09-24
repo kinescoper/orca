@@ -130,3 +130,39 @@ describe('surface tab id', () => {
     expect((await open()).isSessionUnreadable('session-alpha')).toBe(true)
   })
 })
+
+describe('a cleared conversation hands its tab to its replacement', () => {
+  it('admits the declared replacement under the held id and nothing else', async () => {
+    const store = await open()
+    await store.reserveOwner(reserveRequest({ surfaceTabId: 'tab-alpha' }))
+    await store.setConversationCommand('session-alpha', 1, {
+      command: 'clear',
+      state: 'completed',
+      replacementSessionId: 'session-alpha-2',
+      operationId: operationId(),
+      callerKey: 'client-1',
+      // The phase the real flow reserves under: the source declares its replacement before the
+      // replacement's own record exists.
+      phase: 'prepared'
+    })
+
+    await store.reserveOwner(
+      reserveRequest({
+        sessionId: 'session-alpha-2',
+        surfaceTabId: 'tab-alpha',
+        operation: { callerKey: 'client-1', operationId: operationId(), fingerprint: 'fp-2' }
+      })
+    )
+    expect(store.getRecord('session-alpha-2')?.surfaceTabId).toBe('tab-alpha')
+
+    await expect(
+      store.reserveOwner(
+        reserveRequest({
+          sessionId: 'session-beta',
+          surfaceTabId: 'tab-alpha',
+          operation: { callerKey: 'client-1', operationId: operationId(), fingerprint: 'fp-3' }
+        })
+      )
+    ).rejects.toThrow('agent_session_conflict')
+  })
+})

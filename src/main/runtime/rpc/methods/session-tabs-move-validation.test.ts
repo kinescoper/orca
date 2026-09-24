@@ -148,8 +148,9 @@ describe('session tab move validation', () => {
     expect(snapshot?.activeGroupId).toBe('group-2')
     expect(snapshot?.tabGroups?.[0]?.tabOrder).toEqual(['terminal-tab'])
     expect(snapshot?.tabGroups?.[1]).toMatchObject({
-      activeTabId: 'agent-session:session-a',
-      tabOrder: ['file-tab', 'agent-session:session-a']
+      // Published under the id the record holds; with no record here, the string clients derived.
+      activeTabId: 'structured-agent-session-session-a',
+      tabOrder: ['file-tab', 'structured-agent-session-session-a']
     })
   })
 

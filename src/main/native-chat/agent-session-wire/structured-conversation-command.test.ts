@@ -176,8 +176,11 @@ describe('host conversation commands', () => {
     expect(store.getRecord(nextId)).toMatchObject({
       location: before.location,
       accountHome: before.accountHome,
-      options: { model: 'test-model', effort: 'high' }
+      options: { model: 'test-model', effort: 'high' },
+      // The replacement shows in the same tab, so it inherits the id the tab is keyed by.
+      surfaceTabId: before.surfaceTabId
     })
+    expect(before.surfaceTabId).toEqual(expect.any(String))
     expect(store.getRecord(HOST_TEST_SESSION)).not.toBeNull()
     expect(store.listVisibleSessionIds()).toEqual([nextId])
     expect(host.history({ sessionId: nextId, direction: 'tail' }).page.items).toEqual([])

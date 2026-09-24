@@ -14,16 +14,14 @@
  * is a random UUID; these match that.
  */
 
+import { structuredAgentSessionSurfaceTabId } from './structured-agent-session-surface-tab-id'
 import { randomUUID } from 'node:crypto'
 import type {
   AgentSessionExecutionLocation,
   AgentSessionRecord
 } from '../../shared/agent-session-record'
 import { LOCAL_EXECUTION_HOST_ID } from '../../shared/execution-host'
-import {
-  structuredAgentSessionPaneKey,
-  structuredAgentSessionTabId
-} from '../../shared/structured-agent-session-projection'
+import { structuredAgentSessionPaneKey } from '../../shared/structured-agent-session-projection'
 import { isTerminalLeafId, makePaneKey, parsePaneKey } from '../../shared/stable-pane-id'
 import {
   parseWorkerTerminalHostScope,
@@ -67,7 +65,7 @@ export function mintStructuredWorkerHandle(): string {
  * Restart stability comes from persisting the minted key, not from re-deriving it.
  */
 export function mintStructuredWorkerPaneKey(sessionId: string): string {
-  return makePaneKey(structuredAgentSessionTabId(sessionId), randomUUID())
+  return makePaneKey(structuredAgentSessionSurfaceTabId(sessionId), randomUUID())
 }
 
 /** Credential check: only the pane key registered for this session can prove its identity. */
@@ -81,7 +79,7 @@ export function structuredWorkerPaneKeyBelongsToSession(
     registered &&
     registered.paneKey === paneKey &&
     parsed &&
-    parsed.tabId === structuredAgentSessionTabId(sessionId)
+    parsed.tabId === structuredAgentSessionSurfaceTabId(sessionId)
   )
 }
 
@@ -93,9 +91,11 @@ function persistedStructuredWorkerPaneKeyIsValid(
   const parsed = paneKey ? parsePaneKey(paneKey) : null
   return Boolean(
     paneKey &&
-    paneKey !== structuredAgentSessionPaneKey(structuredAgentSessionTabId(sessionId), sessionId) &&
+    paneKey !==
+      structuredAgentSessionPaneKey(structuredAgentSessionSurfaceTabId(sessionId), sessionId) &&
     parsed &&
-    parsed.tabId === structuredAgentSessionTabId(sessionId) &&
+    // Older rows carry the derived prefix; their records were backfilled with the same string.
+    parsed.tabId === structuredAgentSessionSurfaceTabId(sessionId) &&
     isTerminalLeafId(parsed.leafId)
   )
 }

@@ -15,32 +15,28 @@ export function replaceConversationInSnapshot(
   if (!source) {
     return snapshot
   }
-  const id = `agent-session:${replacement.sessionId}`
-  const rename = (value: string | null) => (value === source.id ? id : value)
+  // The tab keeps its id and its place; only the conversation behind it moves. A stray tab already
+  // published for the replacement session (a republish that raced this) is folded into it.
   return {
     ...snapshot,
     snapshotVersion: snapshot.snapshotVersion + 1,
-    activeTabId: rename(snapshot.activeTabId),
     tabs: snapshot.tabs
-      .filter((tab) => tab.id !== id)
+      .filter(
+        (tab) =>
+          tab.id === source.id ||
+          !(tab.type === 'agent-session' && tab.sessionId === replacement.sessionId)
+      )
       .map((tab) =>
         tab.id === source.id
           ? {
               ...tab,
               type: 'agent-session' as const,
-              id,
               sessionId: replacement.sessionId,
               agent: replacement.agent,
               title: defaultAgentChatLabel(replacement.agent),
               replacesSessionId: replacement.sourceSessionId
             }
           : tab
-      ),
-    tabGroups: snapshot.tabGroups?.map((group) => ({
-      ...group,
-      tabOrder: [...new Set(group.tabOrder.map((entry) => rename(entry)!))],
-      activeTabId: rename(group.activeTabId),
-      recentTabIds: group.recentTabIds?.map((entry) => rename(entry)!)
-    }))
+      )
   }
 }

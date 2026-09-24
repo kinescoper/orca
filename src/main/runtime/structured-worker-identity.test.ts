@@ -1,4 +1,6 @@
-import { describe, expect, it, beforeEach } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import type { StructuredAgentSessionHost } from '../native-chat/agent-session-wire/structured-agent-session-host'
+import { setStructuredAgentSessionHost } from '../native-chat/agent-session-wire/structured-agent-session-registry'
 import { isTerminalLeafId, parsePaneKey } from '../../shared/stable-pane-id'
 import {
   structuredAgentSessionPaneKey,
@@ -333,5 +335,68 @@ describe('structured workers stay outside the PTY-only fail-closed paths', () =>
         statuses: []
       })
     ).toBeNull()
+  })
+})
+
+function hostWithRecords(surfaceTabIdBySessionId: Record<string, string>): void {
+  const host = {
+    deps: {
+      store: {
+        getRecord: (sessionId: string) =>
+          sessionId in surfaceTabIdBySessionId
+            ? { sessionId, surfaceTabId: surfaceTabIdBySessionId[sessionId] }
+            : null
+      }
+    }
+  }
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: a test double for the one read-only accessor the code under test touches; the full host is not constructible here.
+  setStructuredAgentSessionHost(host as unknown as StructuredAgentSessionHost)
+}
+
+describe('worker keys under a host-owned chat tab id', () => {
+  afterEach(() => {
+    setStructuredAgentSessionHost(null)
+  })
+
+  it('prefixes a new worker key with the id the session record holds', () => {
+    hostWithRecords({ [SESSION_ID]: 'tab-from-record' })
+    expect(parsePaneKey(mintStructuredWorkerPaneKey(SESSION_ID))?.tabId).toBe('tab-from-record')
+  })
+
+  it('rehydrates a row minted under the id the record holds', () => {
+    hostWithRecords({ [SESSION_ID]: 'tab-from-record' })
+    const handle = mintStructuredWorkerHandle()
+    const paneKey = 'tab-from-record:3f2504e0-4f89-41d3-9a0c-0305e82c3301'
+    const identity = structuredWorkerIdentities.rehydrate({
+      terminal_handle: handle,
+      pane_key: paneKey,
+      process_incarnation: structuredWorkerProcessIncarnation(SESSION_ID),
+      worktree_id: 'wt_1',
+      host_scope: JSON.stringify({ kind: 'local', hostId: 'local' })
+    })
+    try {
+      expect(identity?.paneKey).toBe(paneKey)
+    } finally {
+      structuredWorkerIdentities.forget(handle)
+    }
+  })
+
+  it('still rehydrates a row minted before the host owned the id, through the backfilled record', () => {
+    // An older row carries the derived prefix; its record was backfilled with that same string.
+    hostWithRecords({ [SESSION_ID]: `structured-agent-session-${SESSION_ID}` })
+    const handle = mintStructuredWorkerHandle()
+    const paneKey = `structured-agent-session-${SESSION_ID}:3f2504e0-4f89-41d3-9a0c-0305e82c3301`
+    const identity = structuredWorkerIdentities.rehydrate({
+      terminal_handle: handle,
+      pane_key: paneKey,
+      process_incarnation: structuredWorkerProcessIncarnation(SESSION_ID),
+      worktree_id: 'wt_1',
+      host_scope: JSON.stringify({ kind: 'local', hostId: 'local' })
+    })
+    try {
+      expect(identity?.paneKey).toBe(paneKey)
+    } finally {
+      structuredWorkerIdentities.forget(handle)
+    }
   })
 })

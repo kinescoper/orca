@@ -310,8 +310,14 @@ export const ANTIGRAVITY_CONFIGURED_MODEL_RUNTIME_CAPABILITY =
 export const AGENT_SESSION_CREATE_TAB_ID_RUNTIME_CAPABILITY =
   'agentSession.create.tab-id.v1' as const
 
+// Why: the host's tab snapshot names a chat tab by the id its session record holds. A client that
+// predates this expects the spelling `agent-session:<sessionId>` and echoes it on activate and
+// close, so the host projects that spelling to any paired client not advertising this.
+export const SESSION_TABS_CHAT_TAB_ID_RUNTIME_CAPABILITY = 'session.tabs.chat-tab-id.v1' as const
+
 export const RUNTIME_CAPABILITIES = [
   AGENT_SESSION_CREATE_TAB_ID_RUNTIME_CAPABILITY,
+  SESSION_TABS_CHAT_TAB_ID_RUNTIME_CAPABILITY,
   ANTIGRAVITY_CONFIGURED_MODEL_RUNTIME_CAPABILITY,
   'files.pathsExist',
   'runtime.status.compat.v1',

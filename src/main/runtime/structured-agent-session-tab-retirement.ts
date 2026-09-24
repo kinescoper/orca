@@ -10,14 +10,14 @@ import type {
   RuntimeMobileSessionSnapshotTab,
   RuntimeMobileSessionTabsSnapshot
 } from '../../shared/runtime-types'
-import { structuredAgentSessionTabId } from '../../shared/structured-agent-session-projection'
+import { structuredAgentSessionSurfaceTabId } from './structured-agent-session-surface-tab-id'
 
 /** The snapshot's tab for a structured session, matched by session id and by published tab id. */
 export function findStructuredAgentSessionTab(
   snapshot: RuntimeMobileSessionTabsSnapshot,
   sessionId: string
 ): RuntimeMobileSessionSnapshotTab | null {
-  const tabId = structuredAgentSessionTabId(sessionId)
+  const tabId = structuredAgentSessionSurfaceTabId(sessionId)
   return (
     snapshot.tabs.find(
       (candidate) =>

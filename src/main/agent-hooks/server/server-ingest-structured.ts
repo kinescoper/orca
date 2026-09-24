@@ -1,14 +1,12 @@
 import type { AgentSessionStatusSummary } from '../../../shared/agent-session-wire'
+import { structuredAgentSessionSurfaceTabId } from '../../runtime/structured-agent-session-surface-tab-id'
 import type { AgentStatusIpcPayload } from '../../../shared/agent-status-types'
 import {
   parseAgentStatusSubject,
   serializeAgentStatusSubject,
   type AgentStatusStructuredSessionSubject
 } from '../../../shared/agent-status-subject'
-import {
-  structuredAgentSessionPaneKey,
-  structuredAgentSessionTabId
-} from '../../../shared/structured-agent-session-projection'
+import { structuredAgentSessionPaneKey } from '../../../shared/structured-agent-session-projection'
 import {
   continueMainAgentStatus,
   isAgentStatusHeldOpenByChildWork
@@ -52,7 +50,7 @@ export abstract class AgentHookServerIngestStructured extends AgentHookServerIng
       agentStatus.mainAgent,
       summary.updatedAt
     )
-    const tabId = structuredAgentSessionTabId(parsed.sessionId)
+    const tabId = structuredAgentSessionSurfaceTabId(parsed.sessionId)
     const paneKey = structuredAgentSessionPaneKey(tabId, parsed.sessionId)
     if (this.state.lastStatusByPaneKey.has(paneKey)) {
       throw new Error('Structured status address conflicts with legacy evidence')

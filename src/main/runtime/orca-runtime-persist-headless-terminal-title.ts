@@ -1,4 +1,5 @@
 // @ts-nocheck -- mechanically split from OrcaRuntimeService; behavior is covered by AST equivalence and characterization tests.
+import { resolveClientSessionTabId } from './rpc/methods/session-tab-chat-id-projection'
 import { OrcaRuntimeWithMoveHeadlessMobileSessionTab } from './orca-runtime-move-headless-mobile-session-tab'
 import type {
   RuntimeMarkdownReadTabResult,
@@ -123,8 +124,10 @@ export class OrcaRuntimeWithPersistHeadlessTerminalTitle extends OrcaRuntimeWith
 
   protected resolveMobileSessionHostTabId(
     snapshot: RuntimeMobileSessionTabsSnapshot | undefined,
-    tabId: string
+    requestedTabId: string
   ): string | null {
+    // A client that predates host-owned chat tab ids names a chat by `agent-session:<sessionId>`.
+    const tabId = snapshot ? resolveClientSessionTabId(snapshot, requestedTabId) : requestedTabId
     const tab =
       snapshot?.tabs.find((candidate) => candidate.id === tabId) ??
       snapshot?.tabs.find(

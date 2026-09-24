@@ -31,26 +31,48 @@ describe('conversation pane replacement', () => {
     sessionId: 'new-session',
     agent: 'claude' as const
   }
-  it('preserves group, position, selection and pinning while resetting identity/title', () => {
+  it('keeps the tab, its group, position, selection and pinning while the conversation behind it moves', () => {
+    // The tab id is the host's own and outlives the conversation it shows: read state,
+    // notification ids and every client's placement key on it, so a `/clear` must not rename it.
     const result = replaceConversationInSnapshot(snapshot, replacement)
     expect(result).toMatchObject({
       publicationEpoch: 'epoch',
       snapshotVersion: 5,
       activeGroupId: 'right',
-      activeTabId: 'agent-session:new-session'
+      activeTabId: 'old-tab'
     })
     expect(result.tabs[0]).toMatchObject({
+      id: 'old-tab',
       sessionId: 'new-session',
       title: 'Claude Chat',
       replacesSessionId: 'old-session',
       isPinned: true
     })
     expect(result.tabGroups?.[0]).toMatchObject({
-      tabOrder: ['agent-session:new-session'],
-      recentTabIds: ['agent-session:new-session']
+      tabOrder: ['old-tab'],
+      recentTabIds: ['old-tab']
     })
     expect(snapshot.tabs[0]).toMatchObject({ sessionId: 'old-session' })
     expect(replaceConversationInSnapshot(result, replacement)).toBe(result)
+  })
+  it('folds a tab already published for the replacement session into the kept one', () => {
+    const raced: RuntimeMobileSessionTabsSnapshot = {
+      ...snapshot,
+      tabs: [
+        ...snapshot.tabs,
+        {
+          type: 'agent-session',
+          id: 'new-tab',
+          sessionId: 'new-session',
+          agent: 'claude',
+          title: 'Claude Chat',
+          isActive: false
+        }
+      ]
+    }
+    const result = replaceConversationInSnapshot(raced, replacement)
+    expect(result.tabs.map((tab) => tab.id)).toEqual(['old-tab'])
+    expect(result.tabs[0]).toMatchObject({ sessionId: 'new-session' })
   })
   it('does not touch another workspace', () => {
     expect(

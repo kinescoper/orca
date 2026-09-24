@@ -1,4 +1,5 @@
 // @ts-nocheck -- mechanically split from OrcaRuntimeService; behavior is covered by AST equivalence and characterization tests.
+import { resolveClientSessionTabId } from './rpc/methods/session-tab-chat-id-projection'
 import { OrcaRuntimeWithBuildHeadlessMobileSessionBrowserTabs } from './orca-runtime-build-headless-mobile-session-browser-tabs'
 import type { PtyControllerInventory } from './runtime-pty-controller-contract'
 import { FLOATING_TERMINAL_WORKTREE_ID } from '../../shared/constants'
@@ -93,7 +94,7 @@ export class OrcaRuntimeWithPerformMobileSessionPtyRecordsRefresh extends OrcaRu
 
   async activateMobileSessionTab(
     worktreeSelector: string,
-    tabId: string,
+    requestedTabId: string,
     leafId?: string,
     opts: {
       notifyClients?: boolean
@@ -110,6 +111,8 @@ export class OrcaRuntimeWithPerformMobileSessionPtyRecordsRefresh extends OrcaRu
     this.hydrateHeadlessMobileSessionTabsFromWorkspaceSession(worktreeId)
     await this.refreshMobileSessionPtyRecords(worktreeId)
     const snapshot = this.mobileSessionTabsByWorktree.get(worktreeId)
+    // A client that predates host-owned chat tab ids names a chat by `agent-session:<sessionId>`.
+    const tabId = snapshot ? resolveClientSessionTabId(snapshot, requestedTabId) : requestedTabId
     const directTab = snapshot?.tabs.find((candidate) => candidate.id === tabId)
     const tab = leafId
       ? ((directTab?.type === 'terminal' && directTab.leafId === leafId ? directTab : undefined) ??

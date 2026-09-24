@@ -1,4 +1,5 @@
 // @ts-nocheck -- mechanically split from OrcaRuntimeService; behavior is covered by AST equivalence and characterization tests.
+import { resolveClientSessionTabId } from './rpc/methods/session-tab-chat-id-projection'
 import { OrcaRuntimeWithRefuseUnattributedMobileSessionTabClose } from './orca-runtime-refuse-unattributed-mobile-session-tab-close'
 import type {
   RuntimeMobileSessionTerminalTab,
@@ -18,15 +19,13 @@ import {
 } from './mobile-session-tab-close-outcome'
 import { getRuntimeBrowserPageRegistry } from './runtime-browser-page-registry'
 import type { RuntimeCommandSurfaceHost } from './orca-runtime-core'
-import { structuredAgentSessionTabId } from '../../shared/structured-agent-session-projection'
-import { SESSION_TAB_NOT_FOUND_ERROR } from '../../shared/session-tab-close'
 import { captureAcknowledgedTerminalTabRetirement } from './workspace-session-terminal-tab-retirement-identity'
 import { rendererPublicationThrottle } from '../window/renderer-publication-throttle'
 
 export class OrcaRuntimeWithCloseMobileSessionTab extends OrcaRuntimeWithRefuseUnattributedMobileSessionTabClose {
   async closeMobileSessionTab(
     worktreeSelector: string,
-    tabId: string,
+    requestedTabId: string,
     options: {
       reason?: RuntimeSessionTabCloseReason
       expectedPublicationEpoch?: string
@@ -48,6 +47,8 @@ export class OrcaRuntimeWithCloseMobileSessionTab extends OrcaRuntimeWithRefuseU
     }
     this.restoreLivePairedRendererSessionOwnedMobileTerminals(worktreeId)
     const snapshot = this.mobileSessionTabsByWorktree.get(worktreeId)
+    // A client that predates host-owned chat tab ids names a chat by `agent-session:<sessionId>`.
+    const tabId = snapshot ? resolveClientSessionTabId(snapshot, requestedTabId) : requestedTabId
     if (options.reason !== undefined && options.reason !== 'user' && observedPtyIds === null) {
       // Why: keep-on-unknown must also restore the mirror the caller already pruned.
       this.republishMobileSessionTabsSnapshot(worktreeId)
@@ -300,19 +301,7 @@ export class OrcaRuntimeWithCloseMobileSessionTab extends OrcaRuntimeWithRefuseU
         await this.notifier.closeSessionTab(tab.id, worktreeId)
       }
     } else if (tab.type === 'agent-session') {
-      if (this.notifier?.closeSessionTab) {
-        try {
-          await this.notifier.closeSessionTab(
-            structuredAgentSessionTabId(tab.sessionId),
-            worktreeId
-          )
-        } catch (error) {
-          // The renderer already having removed the tab is an idempotent close, not a veto.
-          if (!(error instanceof Error && error.message === SESSION_TAB_NOT_FOUND_ERROR)) {
-            throw error
-          }
-        }
-      }
+      await this.notifyRendererStructuredTabClosed(tab.sessionId, worktreeId)
       await this.closeStructuredAgentSessionTab(tab)
     } else {
       if (!this.notifier?.closeSessionTab) {

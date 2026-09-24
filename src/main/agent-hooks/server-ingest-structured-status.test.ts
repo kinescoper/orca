@@ -1,4 +1,6 @@
 import { makeStructuredAgentStatusSubject } from '../../shared/agent-status-subject'
+import type { StructuredAgentSessionHost } from '../native-chat/agent-session-wire/structured-agent-session-host'
+import { setStructuredAgentSessionHost } from '../native-chat/agent-session-wire/structured-agent-session-registry'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -427,5 +429,38 @@ describe('the main agent fact on a structured row', () => {
         })
       })
     )
+  })
+})
+
+function hostWithRecords(surfaceTabIdBySessionId: Record<string, string>): void {
+  const host = {
+    deps: {
+      store: {
+        getRecord: (sessionId: string) =>
+          sessionId in surfaceTabIdBySessionId
+            ? { sessionId, surfaceTabId: surfaceTabIdBySessionId[sessionId] }
+            : null
+      }
+    }
+  }
+  // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: a test double for the one read-only accessor the code under test touches; the full host is not constructible here.
+  setStructuredAgentSessionHost(host as unknown as StructuredAgentSessionHost)
+}
+
+describe('the status address of a chat with a host-owned tab id', () => {
+  afterEach(() => {
+    setStructuredAgentSessionHost(null)
+  })
+
+  it('keys the row by the id the session record holds, not a spelling of the session', () => {
+    hostWithRecords({ [SESSION]: 'tab-from-record' })
+    const server = new AgentHookServer()
+    server.ingestStructuredStatus(summary(), SUBJECT)
+    expect(server.getStatusSnapshot()).toEqual([
+      expect.objectContaining({
+        tabId: 'tab-from-record',
+        paneKey: structuredAgentSessionPaneKey('tab-from-record', SESSION)
+      })
+    ])
   })
 })

@@ -13,6 +13,7 @@
  * decision, carried in as `startupPrompt` or asked for through `deliverTerminalPrompt`.
  */
 
+import { structuredAgentSessionSurfaceTabId } from '../../structured-agent-session-surface-tab-id'
 import { randomUUID } from 'node:crypto'
 import { tuiAgentToAgentKind } from '../../../../shared/agent-kind'
 import { launchSourceSchema } from '../../../../shared/telemetry-property-schemas'
@@ -20,7 +21,6 @@ import type { TuiAgent } from '../../../../shared/tui-agent'
 import type { TerminalCreateOptions } from '../../runtime-terminal-contracts'
 import { narrowStructuredLaunchSeedOptions } from '../../../../shared/native-chat-session-option-defaults'
 import { createStructuredAgentSessionOperationId } from '../../../../shared/structured-agent-session-mutation'
-import { structuredAgentSessionTabId } from '../../../../shared/structured-agent-session-projection'
 import {
   AgentLaunchStructuredSessionRefusedError,
   type AgentLaunchSurfaceFactory
@@ -92,7 +92,8 @@ export function agentLaunchSurfaceFactory(
       }
       return {
         sessionId: created.value.sessionId,
-        handle: structuredAgentSessionTabId(created.value.sessionId),
+        // The tab this chat shows in, as the host recorded it; older factories derived a spelling.
+        handle: created.value.tabId ?? structuredAgentSessionSurfaceTabId(created.value.sessionId),
         fence: created.value.fence,
         ...(created.value.tabId ? { tabId: created.value.tabId } : {})
       }

@@ -1,4 +1,5 @@
 // @ts-nocheck -- mechanically split from OrcaRuntimeService; behavior is covered by AST equivalence and characterization tests.
+import { structuredAgentSessionSurfaceTabId } from './structured-agent-session-surface-tab-id'
 import { defaultAgentChatLabel } from '../../shared/agent-session-chat-label'
 import { OrcaRuntimeWithResolveRecoveredStructuredTuiTranscript } from './orca-runtime-resolve-recovered-structured-tui-transcript'
 import { getStructuredAgentSessionHost } from '../native-chat/agent-session-wire/structured-agent-session-registry'
@@ -101,7 +102,8 @@ export class OrcaRuntimeWithRestoreStructuredAgentSessionTabsOnce extends OrcaRu
       await host.setSessionTabVisibility(input.sessionId, true)
     }
     const existing = this.mobileSessionTabsByWorktree.get(input.workspaceId)
-    const id = `agent-session:${input.sessionId}`
+    // The record's id, not a spelling of the session's: clients copy this and key state by it.
+    const id = structuredAgentSessionSurfaceTabId(input.sessionId)
     if (existing?.tabs.some((tab) => tab.id === id)) {
       // A background re-publish is a no-op — no store write, no emit — so it cannot re-surface a
       // client whose mirror lost the tab; healing one needs `activate` or an explicit republish.

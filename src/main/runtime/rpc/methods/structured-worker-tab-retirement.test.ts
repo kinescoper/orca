@@ -131,7 +131,7 @@ describe('structured worker stop retires the chat tab', () => {
     installHost()
     const identity = registerIdentity()
     const { runtime, emit } = await runtimeShowingStructuredTab()
-    expect(await structuredTabIds(runtime)).toEqual([`agent-session:${SESSION}`])
+    expect(await structuredTabIds(runtime)).toEqual([`structured-agent-session-${SESSION}`])
 
     await expect(stopStructuredWorker(identity, 'd1', runtime)).resolves.toEqual({
       stopped: true,
@@ -154,7 +154,7 @@ describe('structured worker stop retires the chat tab', () => {
     const stop = await stopStructuredWorker(identity, 'd1', runtime)
 
     expect(stop.stopped).toBe(false)
-    expect(await structuredTabIds(runtime)).toEqual([`agent-session:${SESSION}`])
+    expect(await structuredTabIds(runtime)).toEqual([`structured-agent-session-${SESSION}`])
   })
 
   it('cannot turn a proven stop into a retained one when the prune throws', async () => {

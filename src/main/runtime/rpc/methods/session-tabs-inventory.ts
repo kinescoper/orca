@@ -1,4 +1,5 @@
 import { isDeepStrictEqual } from 'node:util'
+import { projectSessionTabChatIds } from './session-tab-chat-id-projection'
 import { SESSION_TABS_AUTHORITATIVE_INVENTORY_RUNTIME_CAPABILITY } from '../../../../shared/protocol-version'
 import type { RuntimeMobileSessionTabsResult } from '../../../../shared/runtime-types'
 import type { RpcContext } from '../core'
@@ -31,13 +32,17 @@ export function projectSessionTabsForClient(
   clientCapabilities: Parameters<typeof projectSessionTabAgentStatus>[2],
   structuredNativeChatEnabled: boolean
 ): RuntimeMobileSessionTabsResult {
-  return projectSessionTabBrowserPlacements(
-    projectSessionTabAgentStatus(
-      snapshot,
-      clientKind,
-      clientCapabilities,
-      structuredNativeChatEnabled
+  return projectSessionTabChatIds(
+    projectSessionTabBrowserPlacements(
+      projectSessionTabAgentStatus(
+        snapshot,
+        clientKind,
+        clientCapabilities,
+        structuredNativeChatEnabled
+      ),
+      clientCapabilities
     ),
+    clientKind,
     clientCapabilities
   )
 }

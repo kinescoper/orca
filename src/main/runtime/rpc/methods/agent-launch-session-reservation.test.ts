@@ -299,7 +299,12 @@ describe('the chat tab a launch reserves', () => {
 
     const result = await launch({ ...EXISTING_LAUNCH, paneKey: PANE_KEY }, runtime)
 
-    expect(result.outcome).toMatchObject({ kind: 'structured', tabId: 'tab-from-host' })
+    expect(result.outcome).toMatchObject({
+      kind: 'structured',
+      tabId: 'tab-from-host',
+      // The CLI's handle names the same tab, not a spelling of the session.
+      handle: 'tab-from-host'
+    })
   })
 
   it('reports no tab when the host is older than the field', async () => {
