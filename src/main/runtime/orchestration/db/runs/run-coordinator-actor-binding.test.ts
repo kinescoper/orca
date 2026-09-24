@@ -221,6 +221,8 @@ describe('Run binding by orchestration actor', () => {
       coordinatorHandle: worker.terminalHandle,
       coordinatorPaneKey: worker.paneKey
     })
+    // As an older binary writes the row: no actor, and no generation for one.
+    db.db.prepare('UPDATE runs SET coordinator_actor_generation = NULL WHERE id = ?').run(run.id)
     const before = db.getRunRaw(run.id)?.consumer_generation
 
     db.bindRun({
