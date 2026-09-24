@@ -160,6 +160,10 @@ export function hasQuietMuseReadyPrompt(
 
 /** The one place the tiers are combined; every satisfaction site routes here. */
 export function isTuiIdleSatisfied(input: TuiIdleSatisfactionInput): boolean {
+  // Kimi's startup frame can remain in the tail after its first turn begins.
+  if (input.agent === 'kimi' && hasFreshWorkingFirstPartyStatus(input.firstPartyStatus)) {
+    return false
+  }
   // Why the title before the body: both are tier 1, so either settles, but the title is a
   // memoized lookup and the body is a fresh multi-KB scan. Same verdict, cheaper order.
   if (hasExplicitIdleTitle(input.record, input.rendererTitle) || input.readPositiveBodyEvidence()) {

@@ -6,6 +6,7 @@ import {
 } from '../../shared/agent-detection'
 import type { RuntimeTerminalWaitBlockedReason } from '../../shared/runtime-types'
 import { findAntigravityReadyPromptIndex } from './antigravity-terminal-readiness'
+import { findKimiSessionlessReadyPromptIndex } from './kimi-terminal-readiness'
 import { startOfLastLines, startOfLastNonBlankLines } from './terminal-wait-tail-window'
 
 const EXPLICIT_IDLE_TITLE_RE = /(^|\s)(ready|idle|done)(\s|$|[.!?])/i
@@ -100,6 +101,7 @@ function findDismissedStartupModalIndex(normalized: string): number | null {
 
 function findKnownReadyPromptIndex(normalized: string): number | null {
   const indexes = [
+    findKimiSessionlessReadyPromptIndex(normalized),
     findCodexReadyPromptIndex(normalized),
     findAntigravityReadyPromptIndex(normalized),
     findCursorReadyPromptIndex(normalized)
