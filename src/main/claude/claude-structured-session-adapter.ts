@@ -21,14 +21,10 @@ import {
   type ClaudeStructuredSessionAdapterDeps,
   type ClaudeStructuredSessionEvent
 } from './claude-structured-session-state'
-import {
-  closeAllClaudeSessions,
-  closeClaudeSession,
-  settleClaudeExitedSession
-} from './claude-structured-session-close'
+import { closeAllClaudeSessions, closeClaudeSession } from './claude-structured-session-close'
 import {
   drainClaudeObservedExits,
-  persistClaudeSessionHandle
+  settleClaudeUnexpectedExit
 } from './claude-structured-session-exit-lifecycle'
 import type { AgentSessionBackgroundTaskState } from '../../shared/agent-session-wire'
 import { resolveClaudeProviderHistoryWindow } from './claude-structured-history-window'
@@ -131,41 +127,13 @@ export class ClaudeStructuredSessionAdapter implements StructuredAgentSessionAda
 
   /** Lifecycle recovery is published only after the child tree proof is true. */
   private settleUnexpectedExit(sessionId: string, exit: ClaudeSessionExit): Promise<void> {
-    exit.settlementPromise ??= (async () => {
-      exit.session.unbindReadingControl?.()
-      if (this.exits.get(sessionId) !== exit) {
-        settleClaudeExitedSession(exit.session)
-        return
-      }
-      // Persist the last completed turn before publishing the lifecycle
-      // event that lets the host release and reacquire this exact child.
-      await persistClaudeSessionHandle(sessionId, exit.session, this.deps).catch(
-        (error: unknown) => {
-          // Recovery still publishes: the record keeps its last durable point, and the loss is logged.
-          console.warn('[claude-resume-point] exit cursor was not persisted:', { sessionId, error })
-        }
-      )
-      if (this.exits.get(sessionId) !== exit) {
-        settleClaudeExitedSession(exit.session)
-        return
-      }
-      this.exits.delete(sessionId)
-      const ended: ClaudeStructuredSessionEvent = {
-        type: 'ended',
-        sessionId,
-        reason: exit.error.message,
-        cause: 'unexpected-exit',
-        fence: exit.session.fence,
-        acquisitionGeneration: exit.session.acquisitionGeneration,
-        observedAt: this.deps.now?.() ?? Date.now()
-      }
-      try {
-        this.emit(exit.session, ended)
-      } finally {
-        settleClaudeExitedSession(exit.session)
-      }
-    })()
-    return exit.settlementPromise
+    return settleClaudeUnexpectedExit({
+      sessionId,
+      exit,
+      exits: this.exits,
+      deps: this.deps,
+      emit: (session, event) => this.emit(session, event)
+    })
   }
 
   /** Restart reconciliation reads the transcript a resume replays; these maps track liveness. */
