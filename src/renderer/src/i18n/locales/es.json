@@ -14898,8 +14898,7 @@
       }
     },
     "agentChildRow": {
-      "ended": "Finalizado",
-      "endedAgo": "finalizó hace {{value0}}"
+      "ended": "Finalizado"
     }
   },
   "dashboardPopout": {

@@ -17938,8 +17938,7 @@
       }
     },
     "agentChildRow": {
-      "ended": "終了",
-      "endedAgo": "{{value0}}前に終了"
+      "ended": "終了"
     }
   },
   "dashboardPopout": {
