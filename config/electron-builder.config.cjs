@@ -108,6 +108,8 @@ const emojiShortcodeDatasetResource = {
 const commonExtraResources = [
   relayExtraResource,
   { from: 'out/orcad-template', to: 'orcad-template' },
+  // electron-builder skips a source directory's root node_modules during traversal.
+  { from: 'out/orcad-template/node_modules', to: 'orcad-template/node_modules' },
   bundledPluginResources,
   skillFreshnessResources,
   emojiShortcodeDatasetResource
