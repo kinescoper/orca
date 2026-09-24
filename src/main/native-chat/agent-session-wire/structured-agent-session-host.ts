@@ -276,6 +276,7 @@ export class StructuredAgentSessionHost {
       flushStreamedEvents: this.flushStreamedEvents,
       hasPendingStreamedEvents: (sessionId) =>
         this.runtimeState.hasPendingStreamedEvents(sessionId),
+      readChildWork: this.clientDelivery.readChildWork,
       requireSession: (sessionId) => this.requireSession(sessionId),
       serialize: (sessionId, task) => this.serialize(sessionId, task),
       now: () => this.now()

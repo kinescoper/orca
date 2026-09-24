@@ -21,6 +21,7 @@ import type {
   AgentSessionThreadGoalChange,
   AgentSessionThreadGoalResult
 } from '../../../shared/agent-session-wire'
+import type { AgentChildWorkView } from '../../../shared/agent-status-child-work-view'
 import { threadGoalPlan } from './structured-agent-session-thread-goal'
 import { admitAndRunAgentSessionMutation } from './structured-agent-session-mutation-admission'
 import {
@@ -42,6 +43,8 @@ export type StructuredAgentSessionMutationContext = {
   publish: (sessionId: string, journal: StructuredAgentSessionHostSession['journal']) => void
   flushStreamedEvents: (sessionId: string) => Promise<void>
   hasPendingStreamedEvents?: (sessionId: string) => boolean
+  /** The session's child records, as the strip reads them; what command admission decides on. */
+  readChildWork: (sessionId: string) => AgentChildWorkView[] | undefined
   requireSession: (sessionId: string) => StructuredAgentSessionHostSession
   serialize: <T>(sessionId: string, task: () => Promise<T>) => Promise<T>
   now: () => number
