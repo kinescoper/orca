@@ -2,8 +2,10 @@ import type { LegacyAdoptedMailboxOwner, OrchestrationDb } from '../../../../orc
 import { OrchestrationError } from '../../../../orchestration/orchestration-error'
 import type { DispatchContextRow, DispatchStatus } from '../../../../orchestration/types'
 import type { OrcaRuntimeService } from '../../../../orca-runtime'
-import { readAgentSessionRecordStore } from '../../../../orchestration/structured-session-mail-target'
-import { sessionOrchestrationIdentity } from '../../../../orchestration/structured-session-mail-address'
+import {
+  readAgentSessionRecordStore,
+  sessionOrchestrationIdentity
+} from '../../../../orchestration/structured-session-mail-address'
 import {
   readSessionRecipient,
   refuseUndeliverableSessionRecipient,
@@ -73,8 +75,10 @@ export function resolveBareOrchestrationRecipient(params: {
     return refused(params.handle, session)
   }
   // One session, one identity: mail is addressed where that session's `check` reads — a structured
-  // worker's own handle mailbox, a chat's actor — whichever spelling the sender used.
-  const identity = session ? sessionOrchestrationIdentity(session.sessionId, db) : null
+  // worker's own handle mailbox, a chat's conversation actor — whichever spelling the sender used.
+  const identity = session
+    ? sessionOrchestrationIdentity(session.sessionId, db, sessionStore)
+    : null
   const handle = identity?.address ?? params.handle
   const paneKey = identity
     ? (identity.paneKey ?? undefined)

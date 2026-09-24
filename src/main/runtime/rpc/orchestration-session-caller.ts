@@ -15,17 +15,19 @@
  */
 import { agentSessionLeaseAdmitsWriter } from '../../../shared/agent-session-lease-adjudication'
 import type { AgentSessionRecord } from '../../../shared/agent-session-record'
-import { sessionOrchestrationActor } from '../../../shared/orchestration-actor'
+import {
+  formatOrchestrationActor,
+  sessionOrchestrationActor
+} from '../../../shared/orchestration-actor'
 import { ORCHESTRATION_SESSION_CALLER_ERROR_CODES as CODES } from '../../../shared/orchestration-session-caller-codes'
-import { getStructuredAgentSessionHost } from '../../native-chat/agent-session-wire/structured-agent-session-registry'
 import type { OrcaRuntimeService } from '../orca-runtime'
 import type { OrchestrationSessionCaller } from '../orchestration/orchestration-caller-identity'
 import { OrchestrationError } from '../orchestration/orchestration-error'
 import { isRecordedStructuredWorkerActor } from '../orchestration/db/schema/structured-worker-actor-backfill'
 import {
   lookupOrcaAgentSession,
-  sessionOrchestrationIdentity,
-  type AgentSessionRecordReader
+  readAgentSessionRecordStore,
+  sessionOrchestrationIdentity
 } from '../orchestration/structured-session-mail-address'
 import { structuredWorkerHostScope } from '../structured-worker-identity'
 import type { RpcRequest } from './core'
@@ -110,7 +112,8 @@ export async function resolveOrchestrationSessionCaller(
   const record = await readSessionRecord(runtime, sessionId)
   assertSessionCanAct(sessionId, record)
   const db = runtime.getOrchestrationDb()
-  const identity = sessionOrchestrationIdentity(sessionId, db)
+  // A cleared chat acts as its conversation (the lineage root's actor), never as its own new id.
+  const identity = sessionOrchestrationIdentity(sessionId, db, readAgentSessionRecordStore())
   if (identity.terminalHandle === null && isRecordedStructuredWorkerActor(db.db, identity.actor)) {
     // Why: acting handle-less would split one worker into two identities, and bind like a chat.
     throw new OrchestrationError(
@@ -139,10 +142,10 @@ async function readSessionRecord(
   runtime: OrcaRuntimeService,
   sessionId: string
 ): Promise<AgentSessionRecord> {
-  let store: ReturnType<typeof sessionRecordStore>
+  let store: ReturnType<typeof readAgentSessionRecordStore>
   try {
     await runtime.ensureStructuredAgentSessionHost()
-    store = sessionRecordStore()
+    store = readAgentSessionRecordStore()
   } catch {
     store = null
   }
@@ -169,10 +172,6 @@ async function readSessionRecord(
     `No Orca agent session ${sessionId} exists on this host. No effects were applied.`,
     NO_EFFECTS
   )
-}
-
-function sessionRecordStore(): AgentSessionRecordReader | null {
-  return getStructuredAgentSessionHost()?.deps.store ?? null
 }
 
 function assertSessionCanAct(sessionId: string, record: AgentSessionRecord): void {
@@ -211,7 +210,13 @@ function bindDeclaredCaller(
   }
   const values: Record<string, unknown> = { ...params }
   const declared = values[name]
-  const names: unknown[] = [caller.address, caller.actor, caller.sessionId, caller.terminalHandle]
+  const names: unknown[] = [
+    caller.address,
+    caller.actor,
+    caller.sessionId,
+    formatOrchestrationActor({ kind: 'session', id: caller.sessionId }),
+    caller.terminalHandle
+  ]
   if (declared !== undefined && !names.includes(declared)) {
     throw consumerFenced(caller, String(declared))
   }
