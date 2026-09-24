@@ -200,13 +200,16 @@ describe('deriveAgentChildDisplayState', () => {
     (_l, view) => {
       // The same owned work, folded for a CLI agent whose own turn is over.
       const ownedShell = [{ kind: 'command', state: 'working' }] as const
-      expect(
-        foldAgentLeadStatus({
-          leadState: 'done',
-          interrupted: false,
-          childWorkLiveness: agentChildWorkLiveness(ownedShell)
-        })
-      ).toEqual({ stateName: 'working', workingMode: 'monitoring' })
+      // A non-literal input, as the view passes it, so the fold's input can lose a field.
+      const foldInput = {
+        leadState: 'done',
+        interrupted: false,
+        childWorkLiveness: agentChildWorkLiveness(ownedShell)
+      } as const
+      expect(foldAgentLeadStatus(foldInput)).toEqual({
+        stateName: 'working',
+        workingMode: 'monitoring'
+      })
       expect(deriveAgentChildDisplayState(view, agentChildWorkLiveness(ownedShell))).toBe(
         'monitoring'
       )
