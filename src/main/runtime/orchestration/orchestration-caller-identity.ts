@@ -1,3 +1,4 @@
+import type { AgentSessionOwnerRuntimeKind } from '../../../shared/agent-session-record'
 import type { RunRow } from './types'
 import { isEquivalentPaneKey } from './db/pane-key-match'
 
@@ -30,6 +31,8 @@ export type OrchestrationSessionCaller = OrchestrationCallerIdentity &
     sessionId: string
     /** Where the session runs, from its record; `worker-start --worktree current` places here. */
     workspaceId: string
+    /** Who holds the lease: a native chat runs turn by turn, a TUI owner runs in a PTY. */
+    runtimeKind: AgentSessionOwnerRuntimeKind
   }>
 
 /** A caller with neither a pane nor an actor can never be bound to a Run. */
