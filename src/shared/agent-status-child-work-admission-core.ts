@@ -124,23 +124,30 @@ function admittedOperation(
     : undefined
 }
 
-/** Descriptive facts a sparse observation leaves unsaid (a roster omission knows only "it is
- *  gone"): a later write fills or replaces them, never erases them. Tokens are cumulative and never
- *  shrink; a settled ending keeps its last message unless new evidence carries one. `operation` is
- *  not among them: its absence means the child stopped doing it. */
-function retainedDescription(
+/** Facts a sparse observation leaves unsaid (a roster omission knows only "it is gone"): a later
+ *  write fills or replaces them, never erases them. Tokens are cumulative and never shrink; the
+ *  last message lasts for its invocation. `operation` is not among them: its absence means the
+ *  child stopped doing it. */
+function retainedFacts(
   request: AgentChildWorkObservationFields,
   invocation: AgentChildWorkInvocationFence,
   prior: AgentChildWorkRecord | undefined
 ): Pick<
   AgentChildWorkInput,
-  'name' | 'description' | 'agentType' | 'model' | 'totalTokens' | 'lastMessage'
+  | 'name'
+  | 'description'
+  | 'agentType'
+  | 'model'
+  | 'totalTokens'
+  | 'lastMessage'
+  | 'parentChildWorkId'
+  | 'residency'
 > {
-  const sameEnding =
-    prior?.membership === 'settled' && agentChildWorkFencesEqual(prior.invocation, invocation)
+  const sameInvocation =
+    prior !== undefined && agentChildWorkFencesEqual(prior.invocation, invocation)
   const lastMessage =
     normalizeOptionalField(request.lastMessage, AGENT_CHILD_WORK_LAST_MESSAGE_MAX_LENGTH) ??
-    (sameEnding ? prior.lastMessage : undefined)
+    (sameInvocation ? prior.lastMessage : undefined)
   // An out-of-range count passes through unmerged so the codec still refuses it.
   const requestedTokens = request.totalTokens
   const totalTokens =
@@ -154,18 +161,22 @@ function retainedDescription(
   const description = request.description ?? prior?.description
   const agentType = request.agentType ?? prior?.agentType
   const model = request.model ?? prior?.model
+  const parentChildWorkId = request.parentChildWorkId ?? prior?.parentChildWorkId
+  const residency = request.residency ?? prior?.residency
   return {
     ...(name !== undefined ? { name } : {}),
     ...(description !== undefined ? { description } : {}),
     ...(agentType !== undefined ? { agentType } : {}),
     ...(model !== undefined ? { model } : {}),
     ...(totalTokens !== undefined ? { totalTokens } : {}),
-    ...(lastMessage ? { lastMessage } : {})
+    ...(lastMessage ? { lastMessage } : {}),
+    ...(parentChildWorkId !== undefined ? { parentChildWorkId } : {}),
+    ...(residency !== undefined ? { residency } : {})
   }
 }
 
 /** Builds the record admission writes. `prior` is the stored record when this observation
- *  updates or resumes an existing child; its descriptive facts survive a sparser request. */
+ *  updates or resumes an existing child; what it knew survives a sparser request. */
 export function buildAgentChildWork(
   request: AgentChildWorkObservationFields & {
     parent: AgentStatusSubject
@@ -183,12 +194,8 @@ export function buildAgentChildWork(
     state: request.state,
     membership: request.membership,
     ...(request.outcome !== undefined ? { outcome: request.outcome } : {}),
-    ...retainedDescription(request, host.invocation, prior),
+    ...retainedFacts(request, host.invocation, prior),
     ...(request.providerTiming !== undefined ? { providerTiming: request.providerTiming } : {}),
-    ...(request.parentChildWorkId !== undefined
-      ? { parentChildWorkId: request.parentChildWorkId }
-      : {}),
-    ...(request.residency !== undefined ? { residency: request.residency } : {}),
     ...(operation ? { operation } : {}),
     firstObservedAt: host.firstObservedAt,
     observedAt: request.observedAt,

@@ -90,6 +90,38 @@ describe('child-work admission of sparse observations', () => {
     })
   })
 
+  it('keeps the last message, owner and residency through a settle that names none of them', () => {
+    const { store, admission } = setup()
+    admission.announce(observation())
+    admission.announce(
+      observation({
+        aliases: [{ segmentId: 'segment-1', aliasKind: 'task_id', alias: 'shell-1' }],
+        kind: 'command',
+        parentChildWorkId: 'child-1',
+        residency: 'background',
+        lastMessage: 'listening on 3000'
+      })
+    )
+    admission.announce(observation({ state: 'working', observedAt: 12 }))
+    expect(
+      admission.announce(
+        observation({
+          aliases: [{ segmentId: 'segment-1', aliasKind: 'task_id', alias: 'shell-1' }],
+          kind: 'command',
+          state: 'done',
+          membership: 'settled',
+          observedAt: 20
+        })
+      )
+    ).toMatchObject({ accepted: true })
+    expect(store.getChild('child-2')).toMatchObject({
+      membership: 'settled',
+      parentChildWorkId: 'child-1',
+      residency: 'background',
+      lastMessage: 'listening on 3000'
+    })
+  })
+
   it('never shrinks the token count on a late or duplicate frame', () => {
     const { store, admission } = setup()
     admission.announce(observation({ totalTokens: 5_000 }))
