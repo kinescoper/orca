@@ -43,6 +43,8 @@ export function createStructuredSessionMocks() {
     call: vi.fn<(...args: never[]) => unknown>(),
     fileLinkClick: vi.fn<(...args: never[]) => unknown>(),
     launchLifecycle: nullable<StructuredAgentSessionLaunchLifecycle>(),
+    launchFailureReason: nullable<string>(),
+    launchResumes: false,
     retryLaunch: vi.fn<(...args: never[]) => unknown>(),
     controllerProps: nullable<{ transportEnabled?: boolean }>(),
     mode: 'static' as 'static' | 'outbox',
@@ -80,7 +82,9 @@ export function createStructuredSessionMocks() {
 
   const moduleFactories = {
     structuredAgentSessionClient: () => ({
-      callStructuredAgentSession: mocks.call
+      callStructuredAgentSession: mocks.call,
+      // The pane activates the host status feed for its startup phase; nothing here drives it.
+      subscribeStructuredAgentSessionStatus: async () => ({ unsubscribe: () => {} })
     }),
     useStructuredAgentSession: async () => {
       const { useStructuredAgentSessionOutbox } =
@@ -173,7 +177,11 @@ export function createStructuredSessionMocks() {
     },
     structuredAgentSessionLaunch: () => ({
       retryStructuredAgentSessionLaunch: mocks.retryLaunch,
-      useStructuredAgentSessionLaunchLifecycle: () => mocks.launchLifecycle
+      getStructuredAgentSessionLaunchLifecycle: () => mocks.launchLifecycle,
+      getStructuredAgentSessionLaunchResumes: () => mocks.launchResumes,
+      useStructuredAgentSessionLaunchSelection: () => null,
+      useStructuredAgentSessionLaunchLifecycle: () => mocks.launchLifecycle,
+      useStructuredAgentSessionLaunchFailureReason: () => mocks.launchFailureReason
     }),
     useNativeChatFontScale: () => ({
       useNativeChatFontScale: () => ({ scale: 1 })
@@ -215,13 +223,13 @@ export function createStructuredSessionMocks() {
     nativeChatApprovalCard: () => ({
       NativeChatApprovalCard: (props: NativeChatApprovalCardProps) => {
         mocks.approvalCardProps = props
-        return null
+        return <div data-native-chat-approval-card-mock />
       }
     }),
     nativeChatQuestionCard: () => ({
       NativeChatQuestionCard: (props: NativeChatQuestionCardProps) => {
         mocks.questionCardProps = props
-        return null
+        return <div data-native-chat-question-card-mock />
       }
     })
   }
@@ -229,6 +237,8 @@ export function createStructuredSessionMocks() {
   const resetStructuredSessionMocks = (): void => {
     mocks.call.mockReset()
     mocks.launchLifecycle = null
+    mocks.launchFailureReason = null
+    mocks.launchResumes = false
     mocks.retryLaunch.mockReset()
     mocks.controllerProps = null
     mocks.mode = 'static'

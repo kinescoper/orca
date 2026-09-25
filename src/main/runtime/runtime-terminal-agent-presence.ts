@@ -39,6 +39,7 @@ export type RuntimeTerminalAgentPresenceOptions = {
 export class RuntimeTerminalAgentPresence {
   constructor(private readonly deps: RuntimeTerminalAgentPresenceDependencies) {}
 
+  /** Presence is weaker than readiness; screen-based Kimi evidence still requires pane identity. */
   async isRunning(
     handle: string,
     options: RuntimeTerminalAgentPresenceOptions = {}
@@ -109,6 +110,7 @@ export class RuntimeTerminalAgentPresence {
     }
   }
 
+  /** For adopted PTYs, resolve process identity when retained title and body evidence is insufficient. */
   private async isPtyRunning(
     pty: RuntimePtyWorktreeRecord,
     leaf: RuntimeLeafRecord | null,

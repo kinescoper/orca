@@ -63,6 +63,7 @@ export class RuntimeTerminalWait {
     })
   }
 
+  /** Renderer leaves use the tracked PTY's identity and status, not a banner-derived agent name. */
   private leafSatisfied(leaf: RuntimeLeafRecord, waitText: string): boolean {
     const agent = this.deps.getPaneAgent(leaf.ptyId)
     return isTuiIdleSatisfied({

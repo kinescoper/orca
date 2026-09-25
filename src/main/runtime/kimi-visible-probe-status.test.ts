@@ -51,10 +51,31 @@ async function pendingProbe(agent: TuiAgent | null = 'kimi') {
     )
   const finishRead = (tail = snapshot.tail) =>
     release({ ...snapshot, handle, source: 'screen', tail })
-  return { runtime, result, sendStatus, finishRead }
+  return { runtime, handle, result, sendStatus, finishRead }
 }
 
 describe('Kimi status arriving during a visible-screen probe', () => {
+  it('rejects a predecessor screen when the PTY incarnation changes under the same handle', async () => {
+    const { runtime, handle, result, finishRead } = await pendingProbe()
+    const check = expect(result).rejects.toThrow('timeout')
+    runtime.registerPty(TRANSCRIPT_PANE_PTY_ID, 'wt-1', null, {
+      tabId: 'tab-1',
+      leafId: '11111111-1111-4111-8111-111111111111',
+      incarnationId: 'inc-2',
+      terminalHandle: handle,
+      agentLaunchAuthority: { launchToken: 'replacement-launch', launchAgent: 'kimi' }
+    })
+    finishRead()
+    await check
+  })
+
+  it('does not authorize an unidentified pane from a Kimi screen alone', async () => {
+    const { result, finishRead } = await pendingProbe(null)
+    const check = expect(result).rejects.toThrow('timeout')
+    finishRead()
+    await check
+  })
+
   it.each<TuiAgent>(['codex', 'claude'])(
     'rejects a Kimi snapshot when an unknown pane becomes %s during the read',
     async (agent) => {

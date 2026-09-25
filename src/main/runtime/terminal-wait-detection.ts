@@ -43,7 +43,7 @@ function computeExplicitIdleStatusFromTitle(title: string): AgentStatus | null {
 export const detectExplicitIdleStatusFromTitle: (title: string) => AgentStatus | null =
   memoizeTitleClassification(computeExplicitIdleStatusFromTitle)
 
-/** Known pane identity prevents quoted Kimi startup output from proving readiness. */
+/** Kimi startup requires independently resolved pane identity; screen text alone is insufficient. */
 export function isKnownReadyPromptPreview(preview: string, agent?: TuiAgent | null): boolean {
   const normalized = preview.toLowerCase()
   const readyIndex = findKnownReadyPromptIndex(normalized, agent)
@@ -103,7 +103,7 @@ function findDismissedStartupModalIndex(normalized: string): number | null {
 
 function findKnownReadyPromptIndex(normalized: string, agent?: TuiAgent | null): number | null {
   const indexes = [
-    agent == null || agent === 'kimi' ? findKimiSessionlessReadyPromptIndex(normalized) : null,
+    agent === 'kimi' ? findKimiSessionlessReadyPromptIndex(normalized) : null,
     findCodexReadyPromptIndex(normalized),
     findAntigravityReadyPromptIndex(normalized),
     findCursorReadyPromptIndex(normalized)

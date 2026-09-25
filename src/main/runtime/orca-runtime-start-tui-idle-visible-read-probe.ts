@@ -54,6 +54,11 @@ export class OrcaRuntimeWithStartTuiIdleVisibleReadProbe extends OrcaRuntimeWith
     if (providerTimeoutMs < 1) {
       return
     }
+    const readPtyId =
+      this.getLivePtyForHandle(waiter.handle)?.pty.ptyId ??
+      this.getLiveLeafForHandle(waiter.handle).leaf.ptyId
+    const readIncarnationId =
+      (readPtyId ? this.ptysById.get(readPtyId)?.incarnationId : null) ?? null
     void withTimeout(
       this.readTerminal(waiter.handle, agent === 'antigravity' ? { screen: true } : {}, {
         timeoutMs: providerTimeoutMs,
@@ -77,7 +82,12 @@ export class OrcaRuntimeWithStartTuiIdleVisibleReadProbe extends OrcaRuntimeWith
         const ptyId =
           this.getLivePtyForHandle(waiter.handle)?.pty.ptyId ??
           this.getLiveLeafForHandle(waiter.handle).leaf.ptyId
-        const liveAgent = this.getPaneAgentForTuiIdle(ptyId) ?? agent
+        const liveIncarnationId = (ptyId ? this.ptysById.get(ptyId)?.incarnationId : null) ?? null
+        // A replacement can retain both its handle and PTY id, but not its predecessor's screen.
+        if (ptyId !== readPtyId || liveIncarnationId !== readIncarnationId) {
+          return
+        }
+        const liveAgent = this.getPaneAgentForTuiIdle(ptyId)
         const snapshotText =
           liveAgent === 'antigravity'
             ? [...projection.tail, projection.draft ?? ''].join('\n')

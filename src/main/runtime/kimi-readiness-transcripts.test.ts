@@ -63,12 +63,24 @@ describe('Kimi sessionless startup readiness', () => {
     }
   )
 
-  it('recognizes sessionless startup before pane agent identity is known', async () => {
+  it('does not authorize sessionless startup before pane agent identity is known', async () => {
     const { runtime, handle } = await createTranscriptPane({
       paneTitle: 'Terminal',
       foregroundProcess: null,
       data: ready
     })
+    await expect(
+      runtime.waitForTerminal(handle, { condition: 'tui-idle', timeoutMs: 100 })
+    ).rejects.toThrow('timeout')
+  })
+
+  it('recognizes startup from a confirmed foreground Kimi without launch metadata', async () => {
+    const { runtime, handle } = await createTranscriptPane({
+      paneTitle: 'Terminal',
+      foregroundProcess: 'kimi',
+      data: ready
+    })
+    await runtime.refreshPtyForegroundAgentFromController(TRANSCRIPT_PANE_PTY_ID)
     await expect(
       runtime.waitForTerminal(handle, { condition: 'tui-idle', timeoutMs: 100 })
     ).resolves.toMatchObject({ satisfied: true })

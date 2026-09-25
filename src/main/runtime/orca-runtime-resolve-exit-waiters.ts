@@ -102,7 +102,7 @@ export class OrcaRuntimeWithResolveExitWaiters extends OrcaRuntimeWithBindPtyInc
     }
   }
 
-  // Why: the primary OSC-title signal can't fire for daemon-hosted terminals (no PTY data through the runtime), so this fallback polls the renderer-synced tab title + foreground-process quiescence; self-cancels when the OSC path fires.
+  /** Daemon-hosted leaves may have no OSC stream; rank retained text against tracked PTY identity. */
   protected isTuiIdleSatisfiedForLeaf(leaf: RuntimeLeafRecord): boolean {
     const agent = this.getPaneAgentForTuiIdle(leaf.ptyId)
     return isTuiIdleSatisfied({
@@ -194,6 +194,7 @@ export class OrcaRuntimeWithResolveExitWaiters extends OrcaRuntimeWithBindPtyInc
     return live ? this.isTuiIdleSatisfiedForLeaf(live) : false
   }
 
+  /** Re-rank title notifications so retained startup text cannot override unfinished Kimi work. */
   protected isTuiIdleSatisfiedForPty(pty: RuntimePtyWorktreeRecord): boolean {
     const agent = this.getPaneAgentForTuiIdle(pty.ptyId)
     return isTuiIdleSatisfied({
