@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { TuiAgent } from '../../shared/tui-agent'
 import { createTranscriptPane, TRANSCRIPT_PANE_PTY_ID } from './agent-transcript-pane-test-harness'
 
@@ -23,6 +23,26 @@ async function pane(data: string, connectionId?: string) {
 }
 
 describe('Kimi sessionless startup readiness', () => {
+  it.each(['working', 'blocked', 'waiting'])(
+    'does not revive retained startup after %s status ages out',
+    async (state) => {
+      const { runtime, handle } = await pane(ready)
+      runtime.onPtyData(
+        TRANSCRIPT_PANE_PTY_ID,
+        `${String.fromCharCode(27)}]9999;${JSON.stringify({ state, agentType: 'kimi' })}${String.fromCharCode(7)}`,
+        Date.now()
+      )
+      const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 31 * 60_000)
+      try {
+        await expect(
+          runtime.waitForTerminal(handle, { condition: 'tui-idle', timeoutMs: 100 })
+        ).rejects.toThrow('timeout')
+      } finally {
+        clock.mockRestore()
+      }
+    }
+  )
+
   it.each<TuiAgent>(['codex', 'claude'])(
     'does not settle a working %s pane displaying the Kimi capture',
     async (agent) => {

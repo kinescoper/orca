@@ -9,7 +9,7 @@ import {
   VISIBLE_TERMINAL_SNAPSHOT_TIMEOUT_MS
 } from './orca-runtime-postlude'
 import { withTimeout } from './runtime-async-boundaries'
-import { hasFreshWorkingFirstPartyStatus } from './tui-idle-evidence'
+import { hasUnfinishedKimiTurn } from './tui-idle-evidence'
 import {
   detectTerminalWaitBlockedReason,
   isKnownReadyPromptPreview
@@ -73,27 +73,27 @@ export class OrcaRuntimeWithStartTuiIdleVisibleReadProbe extends OrcaRuntimeWith
         ) {
           return
         }
-        const snapshotText =
-          agent === 'antigravity'
-            ? [...projection.tail, projection.draft ?? ''].join('\n')
-            : projection.tail.join('\n')
-        const blockedReason = detectTerminalWaitBlockedReason(snapshotText)
-        const ready =
-          agent === 'antigravity'
-            ? isAntigravityReadyPromptSnapshot(snapshotText)
-            : isKnownReadyPromptPreview(snapshotText, agent)
-        if (!blockedReason && !ready) {
-          return
-        }
-        // The agent can become busy while the provider's screen read is in flight.
+        // Both identity and status may change while the screen read is in flight.
         const ptyId =
           this.getLivePtyForHandle(waiter.handle)?.pty.ptyId ??
           this.getLiveLeafForHandle(waiter.handle).leaf.ptyId
         const liveAgent = this.getPaneAgentForTuiIdle(ptyId) ?? agent
+        const snapshotText =
+          liveAgent === 'antigravity'
+            ? [...projection.tail, projection.draft ?? ''].join('\n')
+            : projection.tail.join('\n')
+        const blockedReason = detectTerminalWaitBlockedReason(snapshotText)
+        const ready =
+          liveAgent === 'antigravity'
+            ? isAntigravityReadyPromptSnapshot(snapshotText)
+            : isKnownReadyPromptPreview(snapshotText, liveAgent)
+        if (!blockedReason && !ready) {
+          return
+        }
         if (
           !blockedReason &&
-          liveAgent === 'kimi' &&
-          hasFreshWorkingFirstPartyStatus(
+          hasUnfinishedKimiTurn(
+            liveAgent,
             (ptyId ? this.ptysById.get(ptyId)?.lastExplicitAgentStatus : null) ?? null
           )
         ) {
