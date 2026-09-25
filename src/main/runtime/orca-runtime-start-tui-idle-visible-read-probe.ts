@@ -9,6 +9,7 @@ import {
   VISIBLE_TERMINAL_SNAPSHOT_TIMEOUT_MS
 } from './orca-runtime-postlude'
 import { withTimeout } from './runtime-async-boundaries'
+import { hasFreshWorkingFirstPartyStatus } from './tui-idle-evidence'
 import {
   detectTerminalWaitBlockedReason,
   isKnownReadyPromptPreview
@@ -82,6 +83,20 @@ export class OrcaRuntimeWithStartTuiIdleVisibleReadProbe extends OrcaRuntimeWith
             ? isAntigravityReadyPromptSnapshot(snapshotText)
             : isKnownReadyPromptPreview(snapshotText, agent)
         if (!blockedReason && !ready) {
+          return
+        }
+        // The agent can become busy while the provider's screen read is in flight.
+        const ptyId =
+          this.getLivePtyForHandle(waiter.handle)?.pty.ptyId ??
+          this.getLiveLeafForHandle(waiter.handle).leaf.ptyId
+        const liveAgent = this.getPaneAgentForTuiIdle(ptyId) ?? agent
+        if (
+          !blockedReason &&
+          liveAgent === 'kimi' &&
+          hasFreshWorkingFirstPartyStatus(
+            (ptyId ? this.ptysById.get(ptyId)?.lastExplicitAgentStatus : null) ?? null
+          )
+        ) {
           return
         }
         const result = this.buildTuiIdleProbeResult(waiter.handle, blockedReason)
